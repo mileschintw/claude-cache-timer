@@ -37,6 +37,8 @@ Claude Code 每次請求都會把對話前段放進快取。快取還有效時�
 
 詢問是否新增 marketplace 時回答 `y`，再選擇 user scope。以 user scope 安裝後，Claude 桌面版的 Code 分頁也會載入這個 mod。不過桌面版不能執行 `/plugin` 指令，請在終端機裡安裝。
 
+marketplace 安裝的是最新的 [release](https://github.com/mileschintw/claude-cache-timer/releases)，不是 `main` 的最新 commit。
+
 <details>
 <summary>改用 clone 下來的資料夾</summary>
 

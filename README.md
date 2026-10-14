@@ -37,6 +37,8 @@ In a terminal session of Claude Code:
 
 Answer `y` to add the marketplace, then pick the user scope. Once installed at the user scope, the mod also loads in the Claude desktop app's Code tab. The `/plugin` command itself isn't available there, so run the install from a terminal.
 
+The marketplace installs the latest [release](https://github.com/mileschintw/claude-cache-timer/releases), not the tip of `main`.
+
 <details>
 <summary>Run it from a clone instead</summary>
 

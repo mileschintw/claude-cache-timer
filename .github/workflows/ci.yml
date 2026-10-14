@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CLAUDE_CODE_VERSION: 2.1.292
+  DISABLE_AUTOUPDATER: '1'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install -g @anthropic-ai/claude-code@${{ env.CLAUDE_CODE_VERSION }}
+      - run: claude --version
+      - run: claude plugin validate .
+      - run: claude plugin test .
+
+  # Releases when the version's release line (major.minor while the major is 0,
+  # the major from 1.0.0 on) differs from the latest cache-timer--v* tag, then
+  # pins the marketplace entry to the new tag.
+  release:
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: decide
+        run: |
+          line() {
+            IFS=. read -r major minor _ <<<"$1"
+            if [ "$major" = 0 ]; then echo "0.$minor"; else echo "$major"; fi
+          }
+          version=$(jq -r .version .claude-plugin/plugin.json)
+          tag="cache-timer--v$version"
+          latest=$(git tag --list 'cache-timer--v*' --sort=-v:refname | head -n1)
+
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            release=false
+          elif [ -z "$latest" ]; then
+            release=true
+          elif [ "$(line "$version")" != "$(line "${latest#cache-timer--v}")" ]; then
+            release=true
+          else
+            release=false
+          fi
+
+          echo "version $version, latest tag ${latest:-none}, release $release"
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "release=$release"
+          } >>"$GITHUB_OUTPUT"
+
+      - if: steps.decide.outputs.release == 'true'
+        env:
+          VERSION: ${{ steps.decide.outputs.version }}
+          TAG: ${{ steps.decide.outputs.tag }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          sha=$(git rev-parse HEAD)
+
+          git tag -a "$TAG" -m "cache-timer $VERSION"
+          git push origin "refs/tags/$TAG"
+
+          jq --arg repo "$GITHUB_REPOSITORY" --arg tag "$TAG" --arg sha "$sha" \
+            '.plugins |= map(if .name == "cache-timer" then .source = {source: "github", repo: $repo, ref: $tag, sha: $sha} else . end)' \
+            .claude-plugin/marketplace.json >marketplace.json.tmp
+          mv marketplace.json.tmp .claude-plugin/marketplace.json
+          git add .claude-plugin/marketplace.json
+          git commit -m "Pin the marketplace to cache-timer $VERSION"
+          git push origin HEAD:main
+
+          gh release create "$TAG" --verify-tag --title "cache-timer $VERSION" --generate-notes
