@@ -73,8 +73,8 @@ function world(on: On, settings?: Record<string, unknown>, store: Record<string,
   return w
 }
 
-async function start($: Engine) {
-  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true } as never)
+async function start($: Engine, isInteractive = true) {
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive } as never)
 }
 
 async function step($: Engine) {
@@ -498,4 +498,34 @@ test('a vetoed auto-compact says why', async ($, on) => {
   await w.clock.advance(58 * MIN + 1000)
   expect(w.compactions).toBe(0)
   expect(w.toasts).toContain('Compaction skipped: a hook said no')
+})
+
+test('in a headless session the Compact buttons run /compact', async ($, on) => {
+  const w = world(on)
+  const runs: string[] = []
+  on('command.run', { command: 'compact' }, (_$, e) => {
+    runs.push(e.command)
+
+    return { text: 'Compacted' }
+  })
+  await start($, false)
+  await step($)
+
+  await (await band($, 'desktop')).press({ key: 'compact' })
+  await (await pane($)).press({ key: 'compact-now' })
+  expect(runs).toEqual(['compact', 'compact'])
+  expect(w.toasts).toEqual([])
+})
+
+test('in a headless session a /compact that is refused says why', async ($, on) => {
+  const w = world(on)
+  on('command.run', { command: 'compact' }, () => {
+    throw new Error('no')
+  })
+  await start($, false)
+  await step($)
+
+  await (await band($, 'desktop')).press({ key: 'compact' })
+  expect(w.toasts).toHaveLength(1)
+  expect(w.toasts[0]).toMatch(/^Compaction failed: .+/)
 })

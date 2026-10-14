@@ -127,6 +127,7 @@ export const STRINGS = {
     compacted: 'Compacted the conversation.',
     compactFailed: (why: string) => `Compaction failed: ${why}`,
     alreadyCompacting: 'Already compacting the conversation',
+    ranCompact: 'Ran /compact.',
     usage: 'Usage: /cache [auto on|off] [ttl 5m|1h] [band on|off] [seconds on|off] [lang en|zh-TW] [compact]',
     autoLabel: (onOff: string) => `auto-compact ${onOff}`,
     compactNow: 'Compact',
@@ -190,6 +191,7 @@ export const STRINGS = {
     compacted: '已壓縮對話。',
     compactFailed: (why: string) => `壓縮失敗：${why}`,
     alreadyCompacting: '正在壓縮對話',
+    ranCompact: '已執行 /compact。',
     usage: '用法：/cache [auto on|off] [ttl 5m|1h] [band on|off] [seconds on|off] [lang en|zh-TW] [compact]',
     autoLabel: (onOff: string) => `自動壓縮 ${onOff}`,
     compactNow: '立即壓縮',
@@ -251,6 +253,11 @@ let isCompacting = false
 let compactTriedFor = 0
 /** Model turns that started and haven't ended; `$.session.compact()` rejects while there are any. */
 const runningTurns = new Set<string>()
+/**
+ * A headless session (the desktop app, the SDK, `-p`) has no `$.session.compact()`:
+ * compaction there runs inside a turn, as `/compact`.
+ */
+let isHeadless = false
 
 /** How a compaction the mod asked for ended. */
 type CompactOutcome =
@@ -259,6 +266,8 @@ type CompactOutcome =
   | { kind: 'busy' }
   | { kind: 'failed'; reason: string }
   | { kind: 'already' }
+  /** Ran `/compact`, which reports its own result in the transcript. */
+  | { kind: 'ran' }
 
 const outcomeText = (L: Strings, o: CompactOutcome) => {
   switch (o.kind) {
@@ -272,6 +281,8 @@ const outcomeText = (L: Strings, o: CompactOutcome) => {
       return L.compactFailed(o.reason)
     case 'already':
       return L.alreadyCompacting
+    case 'ran':
+      return L.ranCompact
   }
 }
 
@@ -339,6 +350,8 @@ async function compactNow($: EngineInterface): Promise<CompactOutcome> {
   isCompacting = true
 
   try {
+    if (isHeadless) return await compactByCommand($)
+
     const result = await $.session.compact()
 
     if (result.skip !== undefined) return { kind: 'skipped', reason: result.skip }
@@ -357,10 +370,17 @@ async function compactNow($: EngineInterface): Promise<CompactOutcome> {
   }
 }
 
-/** The Compact buttons: say how it went, unless it simply compacted. */
+/** Runs `/compact` once the session is idle; our session.compact hook resets the timer if it compacts. */
+async function compactByCommand($: EngineInterface): Promise<CompactOutcome> {
+  await $.command.run({ command: 'compact', args: '' })
+
+  return { kind: 'ran' }
+}
+
+/** The Compact buttons: say how it went, unless it compacted or `/compact` already said so. */
 async function pressCompact($: EngineInterface) {
   const outcome = await compactNow($)
-  if (outcome.kind !== 'compacted') $.ui.toast(outcomeText(await strings($), outcome))
+  if (outcome.kind !== 'compacted' && outcome.kind !== 'ran') $.ui.toast(outcomeText(await strings($), outcome))
 }
 
 /** The time-driven text the band and pane show at `t`: the countdown and "N min ago". */
@@ -423,6 +443,7 @@ async function tick($: EngineInterface) {
 
 export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
+    isHeadless = !e.isInteractive
     const saved = (await $.store.get(STORE_KEY)) as Partial<CacheSettings> | undefined
     if (saved) await update($, settings, () => ({ ...DEFAULTS, ...saved, lang: langOf(saved.lang) ?? DEFAULTS.lang }))
 
