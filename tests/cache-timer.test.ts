@@ -11,6 +11,8 @@ type World = {
   usage: { read: number; write: number }
   /** Writes of the `now` atom, each of which redraws the band and pane. */
   nowWrites: number
+  /** How the next compaction ends: a skip reason, or an error it rejects with. */
+  compactEnds?: string | Error
 }
 
 function world(on: On, settings?: Record<string, unknown>, store: Record<string, unknown> = {}): World {
@@ -41,7 +43,12 @@ function world(on: On, settings?: Record<string, unknown>, store: Record<string,
     return { value: undefined }
   })
   on('ui.open', () => ({ value: { isPlaced: true as const } }))
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+  on('ui.log', () => ({ value: undefined }))
+  on('turn.complete', (_$, e) => ({ text: e.answer }))
   on('session.compact', () => {
+    if (w.compactEnds instanceof Error) throw w.compactEnds
+    if (w.compactEnds !== undefined) return { skip: w.compactEnds }
     w.compactions += 1
 
     return { messages: [{ role: 'user', text: 'summary', toolUses: [] }] as never }
@@ -410,4 +417,85 @@ test('/cache lang switches the language and later replies follow it', async ($, 
   expect((await cache($, 'lang fr')).text).toContain('用法：')
   expect((await cache($, 'lang en')).text).toBe('Language set to English')
   expect((await cache($, 'nope')).text).toContain('Usage: /cache')
+})
+
+test('a press during a turn says to wait, and compacts once the turn ends', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await step($)
+  await $.turn.start({ text: 'go', turnId: 't2' })
+  w.compactEnds = new Error('A turn is running')
+
+  await (await band($, 'terminal')).press({ key: 'compact' })
+  expect(w.compactions).toBe(0)
+  expect(w.toasts).toContain('Claude is replying; compact once this turn ends')
+
+  await $.turn.complete({ turnId: 't2', reason: 'answer', answer: 'done', durationMs: 1, isAborted: false } as never)
+  w.compactEnds = undefined
+  await (await pane($)).press({ key: 'compact-now' })
+  expect(w.compactions).toBe(1)
+})
+
+test('a compaction that fails while idle shows why, not that Claude is replying', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await step($)
+  // A test hook that throws is skipped, and the call then rejects with the kit's own error.
+  w.compactEnds = new Error('not allowed from here')
+
+  await (await band($, 'terminal')).press({ key: 'compact' })
+  expect(w.compactions).toBe(0)
+  expect(w.toasts).toHaveLength(1)
+  expect(w.toasts[0]).toMatch(/^Compaction failed: .+/)
+})
+
+test('a vetoed compaction says why', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await step($)
+  w.compactEnds = 'a hook said no'
+
+  await (await pane($)).press({ key: 'compact-now' })
+  expect(w.compactions).toBe(0)
+  expect(w.toasts).toEqual(['Compaction skipped: a hook said no'])
+})
+
+test('/cache compact replies with what happened', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await step($)
+
+  // The host refuses a compaction from inside a command.run hook; the reply says so.
+  const reply = (await cache($, 'compact')).text
+  expect(reply).toMatch(/^Compaction failed: .*command\.run/)
+  expect(w.compactions).toBe(0)
+
+  await $.turn.start({ text: 'go', turnId: 't2' })
+  expect((await cache($, 'compact')).text).toBe('Claude is replying; compact once this turn ends')
+  await $.turn.complete({ turnId: 't2', reason: 'answer', answer: 'done', durationMs: 1, isAborted: false } as never)
+
+  await cache($, 'lang zh-TW')
+  expect((await cache($, 'compact')).text).toMatch(/^壓縮失敗：/)
+})
+
+test('a failed auto-compact stays quiet', async ($, on) => {
+  const w = world(on, { ttl: '1h', isAutoCompact: true, leadSeconds: 120, isBandShown: true, ttlSource: 'manual' })
+  await start($)
+  await step($)
+  w.compactEnds = new Error('not allowed from here')
+
+  await w.clock.advance(58 * MIN + 1000)
+  expect(w.compactions).toBe(0)
+  expect(w.toasts.some(t => t.includes('Compaction failed') || t.includes('Claude is replying'))).toBe(false)
+})
+
+test('a vetoed auto-compact says why', async ($, on) => {
+  const w = world(on, { ttl: '1h', isAutoCompact: true, leadSeconds: 120, isBandShown: true, ttlSource: 'manual' })
+  await start($)
+  await step($)
+  w.compactEnds = 'a hook said no'
+
+  await w.clock.advance(58 * MIN + 1000)
+  expect(w.compactions).toBe(0)
+  expect(w.toasts).toContain('Compaction skipped: a hook said no')
 })

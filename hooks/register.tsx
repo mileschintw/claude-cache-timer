@@ -124,7 +124,9 @@ export const STRINGS = {
     bandReply: (shown: string) => `Band above the prompt: ${shown}`,
     secondsReply: (onOff: string) => `Always show seconds: ${onOff}`,
     langReply: 'Language set to English',
-    compactReply: 'Asked to compact the conversation.',
+    compacted: 'Compacted the conversation.',
+    compactFailed: (why: string) => `Compaction failed: ${why}`,
+    alreadyCompacting: 'Already compacting the conversation',
     usage: 'Usage: /cache [auto on|off] [ttl 5m|1h] [band on|off] [seconds on|off] [lang en|zh-TW] [compact]',
     autoLabel: (onOff: string) => `auto-compact ${onOff}`,
     compactNow: 'Compact',
@@ -185,7 +187,9 @@ export const STRINGS = {
     bandReply: (shown: string) => `提示框上方進度條：${shown}`,
     secondsReply: (onOff: string) => `永遠顯示秒數：${onOff}`,
     langReply: '介面語言已設為繁體中文',
-    compactReply: '已要求壓縮對話。',
+    compacted: '已壓縮對話。',
+    compactFailed: (why: string) => `壓縮失敗：${why}`,
+    alreadyCompacting: '正在壓縮對話',
     usage: '用法：/cache [auto on|off] [ttl 5m|1h] [band on|off] [seconds on|off] [lang en|zh-TW] [compact]',
     autoLabel: (onOff: string) => `自動壓縮 ${onOff}`,
     compactNow: '立即壓縮',
@@ -245,6 +249,33 @@ const ago = (L: Strings, ms: number) => {
 let ticker: { cancel: () => void } | undefined
 let isCompacting = false
 let compactTriedFor = 0
+/** Model turns that started and haven't ended; `$.session.compact()` rejects while there are any. */
+const runningTurns = new Set<string>()
+
+/** How a compaction the mod asked for ended. */
+type CompactOutcome =
+  | { kind: 'compacted' }
+  | { kind: 'skipped'; reason: string }
+  | { kind: 'busy' }
+  | { kind: 'failed'; reason: string }
+  | { kind: 'already' }
+
+const outcomeText = (L: Strings, o: CompactOutcome) => {
+  switch (o.kind) {
+    case 'compacted':
+      return L.compacted
+    case 'skipped':
+      return L.compactSkipped(o.reason)
+    case 'busy':
+      return L.busy
+    case 'failed':
+      return L.compactFailed(o.reason)
+    case 'already':
+      return L.alreadyCompacting
+  }
+}
+
+const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err)) || 'unknown error'
 
 /** A native notification where the surface has one; the toast is the reminder everywhere. */
 async function notify($: EngineInterface, text: string) {
@@ -294,33 +325,42 @@ async function markCompacted($: EngineInterface) {
   await update($, stats, st => ({ ...st, compactions: st.compactions + 1 }))
 }
 
-async function compactNow($: EngineInterface, why: 'auto' | 'manual') {
-  if (isCompacting) return
+/** A line in the debug log; `$.ui.log` is missing in tests. */
+function debugLog($: EngineInterface, text: string) {
+  try {
+    $.ui.log(`cache-timer: ${text}`, { to: 'debug' })
+  } catch {
+    // No log on this host.
+  }
+}
+
+async function compactNow($: EngineInterface): Promise<CompactOutcome> {
+  if (isCompacting) return { kind: 'already' }
   isCompacting = true
 
   try {
-    const L = await strings($)
     const result = await $.session.compact()
 
-    if (result.skip !== undefined) {
-      $.ui.toast(L.compactSkipped(result.skip))
-
-      return
-    }
+    if (result.skip !== undefined) return { kind: 'skipped', reason: result.skip }
 
     // Our own call skips our session.compact hook, so the reset happens here.
     if ((await read($, last)) !== null) await markCompacted($)
 
-    if (why === 'auto') {
-      $.ui.toast(L.autoCompacted)
-      void notify($, L.autoCompacted)
-    }
-  } catch {
-    // Rejects while a turn runs: that turn's own requests keep the cache warm.
-    if (why === 'manual') $.ui.toast((await strings($)).busy)
+    return { kind: 'compacted' }
+  } catch (err) {
+    debugLog($, `compaction rejected (${runningTurns.size} turns running): ${errorText(err)}`)
+
+    // It rejects while a turn runs; anything else is a real failure, with its reason.
+    return runningTurns.size > 0 ? { kind: 'busy' } : { kind: 'failed', reason: errorText(err) }
   } finally {
     isCompacting = false
   }
+}
+
+/** The Compact buttons: say how it went, unless it simply compacted. */
+async function pressCompact($: EngineInterface) {
+  const outcome = await compactNow($)
+  if (outcome.kind !== 'compacted') $.ui.toast(outcomeText(await strings($), outcome))
 }
 
 /** The time-driven text the band and pane show at `t`: the countdown and "N min ago". */
@@ -360,7 +400,15 @@ async function tick($: EngineInterface) {
   const isWorthCompacting = contextOf(hit) >= MIN_COMPACT_TOKENS
   if (s.isAutoCompact && isWorthCompacting && remaining <= leadMs(s) && compactTriedFor !== hit.at) {
     compactTriedFor = hit.at
-    await compactNow($, 'auto')
+    // Busy or failed stays quiet: a running turn keeps the cache warm itself.
+    const outcome = await compactNow($)
+    const L = await strings($)
+    if (outcome.kind === 'compacted') {
+      $.ui.toast(L.autoCompacted)
+      void notify($, L.autoCompacted)
+    } else if (outcome.kind === 'skipped') {
+      $.ui.toast(outcomeText(L, outcome))
+    }
 
     return
   }
@@ -439,6 +487,18 @@ export const register: Register = (on, options) => {
     return response
   })
 
+  on('turn.start', async ($, e, next) => {
+    runningTurns.add(e.turnId)
+
+    return next(e)
+  })
+
+  on('turn.complete', async ($, e, next) => {
+    runningTurns.delete(e.turnId)
+
+    return next(e)
+  })
+
   // Any compaction of the main thread (/compact, auto, ours) replaces the cached prefix.
   on('session.compact', async ($, e, next) => {
     const result = await next(e)
@@ -500,11 +560,7 @@ export const register: Register = (on, options) => {
       return { text: STRINGS[lang].langReply }
     }
 
-    if (verb === 'compact') {
-      await compactNow($, 'manual')
-
-      return { text: L.compactReply }
-    }
+    if (verb === 'compact') return { text: outcomeText(L, await compactNow($)) }
 
     return { text: L.usage }
   })
@@ -536,7 +592,7 @@ export const register: Register = (on, options) => {
             <Text color="error">{L.expired}</Text>
           )}
           <Text dimColor>{L.autoLabel(s.isAutoCompact ? L.on : L.off)}</Text>
-          <Button key="compact" label={L.compactNow} onPress={() => compactNow($, 'manual')} />
+          <Button key="compact" label={L.compactNow} onPress={() => pressCompact($)} />
           <Button key="pane" label={L.pane} onPress={() => openPane($)} />
           <Button key="hide" label={L.hide} dimColor onPress={() => saveSettings($, x => ({ ...x, isBandShown: false }))} />
         </Box>
@@ -655,7 +711,7 @@ export const register: Register = (on, options) => {
           </Box>
         </Box>
 
-        <Button key="compact-now" label={L.compactConversation} onPress={() => compactNow($, 'manual')} />
+        <Button key="compact-now" label={L.compactConversation} onPress={() => pressCompact($)} />
       </Box>
     )
   })
