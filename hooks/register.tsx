@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, ModelUsage, Register } from 'claude-code'
 
-import type { CacheAlert, CacheHit, CacheLang, CacheSettings, CacheStats, CacheTtl } from '../types'
+import type { CacheAlert, CacheHit, CacheLang, CacheSettings, CacheStats, CacheTtl, SavedSession } from '../types'
 
 const PANE = 'cache-timer'
 const STORE_KEY = 'settings'
@@ -10,6 +10,10 @@ const CONFIG_LANG_KEY = 'configLang'
 /** Below this context size a compaction saves too little to be worth losing detail. */
 const MIN_COMPACT_TOKENS = 20_000
 const HISTORY = 30
+/** Store key prefix for one session's last hit and stats, which outlive a restart. */
+const SESSION_KEY_PREFIX = 'session:'
+/** How many sessions' saved hits the store keeps; the oldest go first. */
+const SESSIONS_KEPT = 20
 /** From this much time left the countdown shows seconds; above it, whole minutes. */
 const SECONDS_SHOWN_FROM_MS = 5 * 60_000
 
@@ -25,13 +29,8 @@ const DEFAULTS: CacheSettings = {
 
 const settings = atom({ plugin: 'cache-timer', key: 'settings' } as const, DEFAULTS)
 const last = atom({ plugin: 'cache-timer', key: 'last' } as const, null)
-const stats = atom({ plugin: 'cache-timer', key: 'stats' } as const, {
-  requests: 0,
-  hits: 0,
-  expiries: 0,
-  compactions: 0,
-  history: [],
-})
+const NO_STATS: CacheStats = { requests: 0, hits: 0, expiries: 0, compactions: 0, history: [] }
+const stats = atom({ plugin: 'cache-timer', key: 'stats' } as const, NO_STATS)
 const alert = atom({ plugin: 'cache-timer', key: 'alert' } as const, 'none')
 const now = atom({ plugin: 'cache-timer', key: 'now' } as const, 0)
 
@@ -134,12 +133,14 @@ export const STRINGS = {
     pane: 'Pane',
     hide: 'Hide',
     bandLast: (ago: string, r: string, w: string) => `Last read/write ${ago} · read ${r} · wrote ${w}`,
+    bandEstimated: (ago: string, tok: string) => `Last read/write ${ago} · about ${tok} tokens of context`,
     bandRewrite: (tok: string) => ` · next message re-writes about ${tok} tokens`,
     compactedHint: 'Compacted; the next message writes a fresh cache',
     noCacheHint: 'No cache yet; the timer starts after your first message',
     remaining: (c: string) => `${c} left`,
     lastLine: (ago: string) => `Last read/write: ${ago}`,
     tokensLine: (r: string, w: string, u: string) => `This request read ${r} · wrote ${w} · uncached ${u}`,
+    estimatedLine: (tok: string) => `Restored after a restart: about ${tok} tokens of context; read and write unknown`,
     rewriteLine: (tok: string) => `After expiry, about ${tok} tokens are re-written`,
     thisSession: 'This session',
     statsLine: (rate: string, hits: number, requests: number, expiries: number, compactions: number) =>
@@ -198,12 +199,14 @@ export const STRINGS = {
     pane: '面板',
     hide: '隱藏',
     bandLast: (ago: string, r: string, w: string) => `上次讀寫 ${ago} · 讀取 ${r} · 寫入 ${w}`,
+    bandEstimated: (ago: string, tok: string) => `上次讀寫 ${ago} · 上下文約 ${tok} tokens`,
     bandRewrite: (tok: string) => ` · 下一則訊息會重新寫入約 ${tok} tokens`,
     compactedHint: '已壓縮，下一則訊息會寫入新的快取',
     noCacheHint: '還沒有快取，送出第一則訊息後開始計時',
     remaining: (c: string) => `剩餘 ${c}`,
     lastLine: (ago: string) => `上次讀寫：${ago}`,
     tokensLine: (r: string, w: string, u: string) => `這次讀取 ${r} · 寫入 ${w} · 未快取 ${u}`,
+    estimatedLine: (tok: string) => `重開後還原：上下文約 ${tok} tokens，讀寫各多少不明`,
     rewriteLine: (tok: string) => `過期後重新寫入約 ${tok} tokens`,
     thisSession: '本 session',
     statsLine: (rate: string, hits: number, requests: number, expiries: number, compactions: number) =>
@@ -334,6 +337,62 @@ async function markCompacted($: EngineInterface) {
   await update($, last, () => null)
   await update($, alert, (): CacheAlert => 'compacted')
   await update($, stats, st => ({ ...st, compactions: st.compactions + 1 }))
+  await saveSession($)
+}
+
+/** Keeps this session's last hit and stats in the store, where a restart finds them. */
+async function saveSession($: EngineInterface) {
+  const saved: SavedSession = { last: await read($, last), stats: await read($, stats), savedAt: await $.clock.now() }
+  await $.store.set(SESSION_KEY_PREFIX + (await $.session.id()), saved)
+}
+
+/** Drops all but the most recently saved sessions. */
+async function pruneSessions($: EngineInterface) {
+  const keys = (await $.store.keys()).filter(k => k.startsWith(SESSION_KEY_PREFIX))
+  if (keys.length <= SESSIONS_KEPT) return
+
+  const dated = await Promise.all(
+    keys.map(async key => ({ key, savedAt: ((await $.store.get(key)) as SavedSession | undefined)?.savedAt ?? 0 })),
+  )
+  dated.sort((a, b) => b.savedAt - a.savedAt)
+  for (const { key } of dated.slice(SESSIONS_KEPT)) await $.store.delete(key)
+}
+
+/**
+ * Puts a hit found after a restart back on the timer, with the reminders that
+ * already fired for it marked as fired and no auto-compact the moment it loads.
+ */
+async function restoreHit($: EngineInterface, hit: CacheHit | null, st: CacheStats) {
+  const t = await $.clock.now()
+  const s = await read($, settings)
+  await update($, last, () => hit)
+  await update($, stats, () => st)
+  await update($, now, () => t)
+  if (hit === null) return
+
+  const remaining = hit.at + ttlMs(s.ttl) - t
+  await update($, alert, (): CacheAlert => (remaining <= 0 ? 'expired' : remaining <= warnMs(s.ttl) ? 'warned' : 'none'))
+  if (remaining <= leadMs(s)) compactTriedFor = hit.at
+}
+
+/** Restores this session's saved hit; false when the store has none for it. */
+async function restoreSession($: EngineInterface) {
+  const saved = (await $.store.get(SESSION_KEY_PREFIX + (await $.session.id()))) as SavedSession | undefined
+  if (saved === undefined) return false
+
+  await restoreHit($, saved.last, saved.stats)
+
+  return true
+}
+
+/**
+ * The hit a resumed transcript implies when the store has none for it (a
+ * session from before this version, or a fork): its last response's time and
+ * context size, with the read/write split unknown.
+ */
+async function estimateHit($: EngineInterface, secondsSince: number, contextTokens: number) {
+  const hit: CacheHit = { at: (await $.clock.now()) - secondsSince * 1000, read: contextTokens, write: 0, uncached: 0, isEstimated: true }
+  await restoreHit($, hit, NO_STATS)
 }
 
 /** A line in the debug log; `$.ui.log` is missing in tests. */
@@ -461,6 +520,10 @@ export const register: Register = (on, options) => {
       argumentHint: '[auto on|off] [ttl 5m|1h] [band on|off] [seconds on|off] [lang en|zh-TW] [compact]',
     })
 
+    const isRestored = await restoreSession($)
+    debugLog($, `session ${await $.session.id()} started, saved hit ${isRestored ? 'restored' : 'not found'}`)
+    await pruneSessions($)
+
     ticker?.cancel()
     ticker = $.clock.every(1000, () => void tick($))
 
@@ -503,6 +566,7 @@ export const register: Register = (on, options) => {
         await update($, alert, (): CacheAlert => 'none')
         await update($, now, () => t)
       }
+      await saveSession($)
     }
 
     return response
@@ -529,6 +593,18 @@ export const register: Register = (on, options) => {
     }
 
     return result
+  })
+
+  // A resume or fork in the same process starts no session.start; either way the store or the transcript says when the cache was last used.
+  on('classic.SessionStart', async ($, e, next) => {
+    if ((e.source === 'resume' || e.source === 'fork') && !(await restoreSession($))) {
+      const seconds = e.seconds_since_last_response
+      const context = e.context_tokens
+      if (seconds !== undefined && context !== undefined && context > 0) await estimateHit($, seconds, context)
+      debugLog($, `session ${await $.session.id()} ${e.source}: estimated from the transcript`)
+    }
+
+    return next(e)
   })
 
   // A model switch reports the TTL the session's cache uses.
@@ -618,7 +694,9 @@ export const register: Register = (on, options) => {
           <Button key="hide" label={L.hide} dimColor onPress={() => saveSettings($, x => ({ ...x, isBandShown: false }))} />
         </Box>
         <Text dimColor>
-          {L.bandLast(ago(L, t - hit.at), tokens(hit.read), tokens(hit.write))}
+          {hit.isEstimated
+            ? L.bandEstimated(ago(L, t - hit.at), tokens(contextOf(hit)))
+            : L.bandLast(ago(L, t - hit.at), tokens(hit.read), tokens(hit.write))}
           {remaining > 0 ? '' : L.bandRewrite(tokens(contextOf(hit)))}
         </Text>
       </Box>
@@ -662,7 +740,11 @@ export const register: Register = (on, options) => {
         {hit !== null && (
           <Box flexDirection="column">
             <Text>{L.lastLine(ago(L, t - hit.at))}</Text>
-            <Text>{L.tokensLine(tokens(hit.read), tokens(hit.write), tokens(hit.uncached))}</Text>
+            <Text>
+              {hit.isEstimated
+                ? L.estimatedLine(tokens(contextOf(hit)))
+                : L.tokensLine(tokens(hit.read), tokens(hit.write), tokens(hit.uncached))}
+            </Text>
             <Text dimColor>{L.rewriteLine(tokens(contextOf(hit)))}</Text>
           </Box>
         )}

@@ -13,6 +13,8 @@ type World = {
   nowWrites: number
   /** How the next compaction ends: a skip reason, or an error it rejects with. */
   compactEnds?: string | Error
+  /** The mod's `$.store`, kept across a simulated restart. */
+  store: Record<string, unknown>
 }
 
 function world(on: On, settings?: Record<string, unknown>, store: Record<string, unknown> = {}): World {
@@ -22,14 +24,28 @@ function world(on: On, settings?: Record<string, unknown>, store: Record<string,
     clock: mock.clock(on, { now: 1_000_000 }),
     usage: { read: 150_000, write: 2_000 },
     nowWrites: 0,
+    store: settings ? { ...store, settings } : { ...store },
   }
-  mock.store(on, settings ? { ...store, settings } : store)
+  on('store.get', (_$, e) => ({ value: w.store[e.key] }))
+  on('store.set', (_$, e) => {
+    w.store[e.key] = JSON.parse(JSON.stringify(e.value))
+
+    return { value: undefined }
+  })
+  on('store.delete', (_$, e) => {
+    delete w.store[e.key]
+
+    return { value: undefined }
+  })
+  on('store.keys', () => ({ value: Object.keys(w.store) }))
+  on('session.id', () => ({ value: 'sess-1' }))
   on('state.set', (_$, e, next) => {
     if (e.plugin === 'cache-timer' && e.key === 'now') w.nowWrites += 1
 
     return next(e)
   })
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('classic.SessionStart', () => ({}))
   // The engine's own band, standing in for an empty one.
   on('ui.render', ($, e) => {
     const { Text } = $.ui.resolve(e)
@@ -528,4 +544,102 @@ test('in a headless session a /compact that is refused says why', async ($, on) 
   await (await band($, 'desktop')).press({ key: 'compact' })
   expect(w.toasts).toHaveLength(1)
   expect(w.toasts[0]).toMatch(/^Compaction failed: .+/)
+})
+
+/** What the mod keeps for session `sess-1` after one hit at `at`, as a restart finds it. */
+const savedSession = (at: number) => ({
+  'session:sess-1': {
+    last: { at, read: 150_000, write: 2_000, uncached: 500 },
+    stats: { requests: 1, hits: 1, expiries: 0, compactions: 0, history: [150_000 / 152_500] },
+    savedAt: at,
+  },
+})
+
+test('a turn saves the session last hit and stats to the store', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await step($)
+
+  expect(w.store['session:sess-1']).toEqual(savedSession(1_000_000)['session:sess-1'])
+})
+
+test('after a restart the band and pane show the saved hit right away', async ($, on) => {
+  const w = world(on, undefined, savedSession(1_000_000 - 10 * MIN))
+  await start($)
+
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await band($, surface)
+    expect(await ui.find({ type: 'Text', text: /^cache [█░]+ 50 \/ 60 min$/ })).toBeDefined()
+  }
+  const p = await pane($)
+  expect(await p.find({ type: 'Text', text: /^50 \/ 60 min left$/ })).toBeDefined()
+  expect(await p.find({ type: 'Text', text: /read 150k · wrote 2k/ })).toBeDefined()
+  expect(await p.find({ type: 'Text', text: /\(1\/1 requests\)/ })).toBeDefined()
+  expect(w.toasts).toHaveLength(0)
+})
+
+test('a hit that expired while the app was closed shows as expired, with no toast', async ($, on) => {
+  const w = world(on, undefined, savedSession(1_000_000 - 70 * MIN))
+  await start($)
+  await w.clock.advance(5000)
+
+  expect(await (await band($, 'desktop')).find({ type: 'Text', text: /^Cache expired$/ })).toBeDefined()
+  expect(w.toasts).toHaveLength(0)
+})
+
+test('a restart after a compaction finds no hit to time', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await step($)
+  await (await band($, 'terminal')).press({ key: 'compact' })
+
+  expect((w.store['session:sess-1'] as { last: unknown }).last).toBeNull()
+})
+
+test('the store keeps only the 20 most recently saved sessions', async ($, on) => {
+  const old = Object.fromEntries(
+    Array.from({ length: 25 }, (_, i) => [`session:old-${i}`, { last: null, stats: {}, savedAt: i }]),
+  )
+  const w = world(on, undefined, { ...old, other: 1 })
+  await start($)
+
+  const kept = Object.keys(w.store).filter(k => k.startsWith('session:'))
+  expect(kept).toHaveLength(20)
+  expect(kept).not.toContain('session:old-4')
+  expect(kept).toContain('session:old-5')
+  expect(w.store.other).toBe(1)
+})
+
+const resume = ($: Engine, source: 'resume' | 'fork' | 'startup' = 'resume') =>
+  $.classic.SessionStart({ source, seconds_since_last_response: 600, context_tokens: 120_000 } as never)
+
+test('a session saved before this version is estimated from the resume', async ($, on) => {
+  world(on)
+  await start($)
+  await resume($)
+
+  const ui = await band($, 'desktop')
+  expect(await ui.find({ type: 'Text', text: /^cache [█░]+ 50 \/ 60 min$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /about 120k tokens of context/ })).toBeDefined()
+  const p = await pane($)
+  expect(await p.find({ type: 'Text', text: /^50 \/ 60 min left$/ })).toBeDefined()
+  expect(await p.find({ type: 'Text', text: /Restored after a restart: about 120k tokens/ })).toBeDefined()
+})
+
+test('a saved hit wins over the estimate', async ($, on) => {
+  world(on, undefined, savedSession(1_000_000 - 20 * MIN))
+  await start($)
+  await resume($)
+
+  const p = await pane($)
+  expect(await p.find({ type: 'Text', text: /^40 \/ 60 min left$/ })).toBeDefined()
+  expect(await p.find({ type: 'Text', text: /read 150k · wrote 2k/ })).toBeDefined()
+})
+
+test('a fresh start estimates nothing', async ($, on) => {
+  world(on)
+  await start($)
+  await resume($, 'startup')
+
+  expect(await (await pane($)).find({ type: 'Text', text: /No cache yet/ })).toBeDefined()
 })

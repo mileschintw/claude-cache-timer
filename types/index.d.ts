@@ -22,6 +22,11 @@ export type CacheHit = {
   read: number
   write: number
   uncached: number
+  /**
+   * Rebuilt from a resumed transcript after a restart: only the context size is
+   * known, and `read` carries all of it.
+   */
+  isEstimated?: true
 }
 
 export type CacheStats = {
@@ -31,6 +36,14 @@ export type CacheStats = {
   compactions: number
   /** Share of each request's input the cache served, oldest first, 0..1. */
   history: number[]
+}
+
+/** One session's timer as the store keeps it, so it outlives a restart of the app. */
+export type SavedSession = {
+  last: CacheHit | null
+  stats: CacheStats
+  /** When it was saved, ms since the epoch; the oldest sessions are dropped first. */
+  savedAt: number
 }
 
 /** Which reminder has fired for the current hit. */
