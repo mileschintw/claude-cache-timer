@@ -9,7 +9,12 @@
   "plugins": [
     {
       "name": "cache-timer",
-      "source": "./"
+      "source": {
+        "source": "github",
+        "repo": "mileschintw/claude-cache-timer",
+        "ref": "cache-timer--v0.2.0",
+        "sha": "adbd33103de75e247559c69e6ec45395b798e736"
+      }
     }
   ]
 }
