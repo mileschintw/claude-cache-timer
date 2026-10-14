@@ -17,6 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -25,9 +27,25 @@ jobs:
       - run: claude plugin validate .
       - run: claude plugin test .
 
-  # Releases when the version's release line (major.minor while the major is 0,
-  # the major from 1.0.0 on) differs from the latest cache-timer--v* tag, then
-  # pins the marketplace entry to the new tag.
+      # Only the release job sets the version, so every version is a release.
+      - name: Version is left to releases
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            echo "No base commit to compare with; skipped."
+            exit 0
+          fi
+          before=$(git show "$BASE:.claude-plugin/plugin.json" | jq -r .version)
+          after=$(jq -r .version .claude-plugin/plugin.json)
+          if [ "$before" != "$after" ]; then
+            echo "::error file=.claude-plugin/plugin.json::The version changed from $before to $after. Leave it alone and add a 'Release: patch|minor|major' trailer to the commit instead."
+            exit 1
+          fi
+
+  # Releases when a pushed commit carries a `Release: patch|minor|major`
+  # trailer: bumps the version, tags and releases it, then pins the
+  # marketplace entry to the new tag.
   release:
     needs: check
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -45,50 +63,44 @@ jobs:
           fetch-depth: 0
 
       - id: decide
+        env:
+          BEFORE: ${{ github.event.before }}
         run: |
-          line() {
-            IFS=. read -r major minor _ <<<"$1"
-            if [ "$major" = 0 ]; then echo "0.$minor"; else echo "$major"; fi
-          }
-          version=$(jq -r .version .claude-plugin/plugin.json)
-          tag="cache-timer--v$version"
-          latest=$(git tag --list 'cache-timer--v*' --sort=-v:refname | head -n1)
+          if git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then range="$BEFORE..HEAD"; else range="HEAD^!"; fi
+          current=$(jq -r .version .claude-plugin/plugin.json)
+          next=$(bash .github/scripts/next-version.sh "$current" "$range")
+          tag="cache-timer--v$next"
 
-          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
-            release=false
-          elif [ -z "$latest" ]; then
-            release=true
-          elif [ "$(line "$version")" != "$(line "${latest#cache-timer--v}")" ]; then
-            release=true
-          else
-            release=false
+          if [ -n "$next" ] && git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "::error::$tag already exists."
+            exit 1
           fi
 
-          echo "version $version, latest tag ${latest:-none}, release $release"
+          echo "commits $range, version $current, release ${next:-none}"
           {
-            echo "version=$version"
+            echo "version=$next"
             echo "tag=$tag"
-            echo "release=$release"
           } >>"$GITHUB_OUTPUT"
 
-      - if: steps.decide.outputs.release == 'true'
+      - if: steps.decide.outputs.version != ''
         env:
           VERSION: ${{ steps.decide.outputs.version }}
           TAG: ${{ steps.decide.outputs.tag }}
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          sha=$(git rev-parse HEAD)
 
+          sed -i -E "s/^(  \"version\": )\"[^\"]*\"/\1\"$VERSION\"/" .claude-plugin/plugin.json
+          test "$(jq -r .version .claude-plugin/plugin.json)" = "$VERSION"
+          git commit -am "Release cache-timer $VERSION"
           git tag -a "$TAG" -m "cache-timer $VERSION"
-          git push origin "refs/tags/$TAG"
+          sha=$(git rev-parse HEAD)
 
           jq --arg repo "$GITHUB_REPOSITORY" --arg tag "$TAG" --arg sha "$sha" \
             '.plugins |= map(if .name == "cache-timer" then .source = {source: "github", repo: $repo, ref: $tag, sha: $sha} else . end)' \
             .claude-plugin/marketplace.json >marketplace.json.tmp
           mv marketplace.json.tmp .claude-plugin/marketplace.json
-          git add .claude-plugin/marketplace.json
-          git commit -m "Pin the marketplace to cache-timer $VERSION"
-          git push origin HEAD:main
+          git commit -am "Pin the marketplace to cache-timer $VERSION"
 
+          git push --atomic origin HEAD:main "refs/tags/$TAG"
           gh release create "$TAG" --verify-tag --title "cache-timer $VERSION" --generate-notes

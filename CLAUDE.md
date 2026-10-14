@@ -19,20 +19,31 @@ For a type check, load the mod in Claude Code once. That writes types and a tsco
 
 - Every UI string goes through `STRINGS` and exists in both `en` and `zh-TW`.
 - A user-facing change updates both `README.md` and `README.zh-TW.md`.
-- A functional change bumps `version` in `.claude-plugin/plugin.json`.
+- Never edit `version` in `.claude-plugin/plugin.json` by hand; CI fails if a commit changes it. To release, add a `Release:` trailer (see Releases).
 - Commits, issues and READMEs are in English.
 
 ## Releases
 
 The marketplace entry in `.claude-plugin/marketplace.json` is pinned to a release tag, so users get only releases, not every commit on `main`.
 
-The release job in CI runs after the checks pass on a push to `main`. It releases when the version's release line differs from the latest `cache-timer--v*` tag. The release line is `major.minor` while the major is 0, and the major from 1.0.0 on. So 0.2.0 → 0.3.0 or 1.x → 2.0.0 releases, and 0.2.0 → 0.2.1 doesn't.
+Every version is a release, and only a release changes the version. A commit asks for one with a trailer at the end of its message, before `Co-Authored-By`:
 
-A release does three things:
+```
+Release: patch
+```
 
-- creates the `cache-timer--v<version>` tag;
-- creates a GitHub release;
-- pushes a bot commit to `main` that re-pins the marketplace entry. Pull `main` afterwards.
+The value is `patch`, `minor` or `major`. A push with no such trailer releases nothing. If several pushed commits carry one, the push releases once, at the highest level.
+
+The release job in CI runs after the checks pass on a push to `main`. `.github/scripts/next-version.sh` reads the trailers and works out the next version. Then the job:
+
+- pushes a bot commit `Release cache-timer <version>` that sets `version`;
+- tags that commit `cache-timer--v<version>`;
+- pushes a second bot commit that re-pins the marketplace entry to the tag;
+- creates a GitHub release with generated notes.
+
+Pull `main` afterwards.
+
+The trailers are read once, for the push that carries them. If the release job fails (for example `main` moved during the checks and its push was rejected), the request is not picked up later; retry with an empty commit that carries the trailer: `git commit --allow-empty -m "Retry the release" -m "Release: patch"`.
 
 Directory listing on claude.ai is a separate, manual submission and isn't part of CD.
 
