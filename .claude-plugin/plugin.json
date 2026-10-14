@@ -1,6 +1,6 @@
 {
   "name": "cache-timer",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Prompt cache TTL countdown: a band above the prompt, a /cache pane, expiry reminders and optional auto-compact before the cache lapses",
   "author": { "name": "mileschintw", "url": "https://github.com/mileschintw" },
   "homepage": "https://github.com/mileschintw/claude-cache-timer",

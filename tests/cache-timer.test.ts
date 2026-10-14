@@ -113,8 +113,54 @@ test('band counts down from the TTL after a cache hit', async ($, on) => {
       component: 'AbovePrompt',
       props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 100 } as never,
     })
-    expect(await ui.find({ type: 'Text', text: /59:59 \/ 60:00/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^cache [█░]+ 60 \/ 60 min$/ })).toBeDefined()
   }
+})
+
+test('band and pane show minutes until 5 minutes are left, then mm:ss alone', { timeoutMs: 20_000 }, async ($, on) => {
+  const w = world(on)
+  await start($)
+  await step($)
+  await w.clock.advance(32 * MIN + 30_000)
+
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await band($, surface)
+    expect(await ui.find({ type: 'Text', text: /28 \/ 60 min/ })).toBeDefined()
+  }
+  const p = await pane($)
+  expect(await p.find({ type: 'Text', text: /^28 \/ 60 min left$/ })).toBeDefined()
+
+  await w.clock.advance(22 * MIN + 31_000)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await band($, surface)
+    expect(await ui.find({ type: 'Text', text: /^cache [█░]+ 04:59$/ })).toBeDefined()
+  }
+  expect(await p.find({ type: 'Text', text: /^04:59 left$/ })).toBeDefined()
+})
+
+test('/cache seconds and the pane button switch to mm:ss the whole time', async ($, on) => {
+  world(on)
+  await start($)
+  await step($)
+  const p = await pane($)
+  expect(await p.find({ type: 'Text', text: /^60 \/ 60 min left$/ })).toBeDefined()
+
+  expect((await cache($, 'seconds on')).text).toBe('Always show seconds: on')
+  expect(await p.find({ type: 'Text', text: /^60:00 left$/ })).toBeDefined()
+
+  await p.press({ key: 'seconds' })
+  expect(await p.find({ type: 'Text', text: /^60 \/ 60 min left$/ })).toBeDefined()
+
+  expect((await cache($, 'lang zh-TW')).text).toBe('介面語言已設為繁體中文')
+  expect((await cache($, 'seconds on')).text).toBe('永遠顯示秒數：開')
+})
+
+test('always-show-seconds saved in an earlier session still applies', async ($, on) => {
+  world(on, { ttl: '1h', isAutoCompact: false, leadSeconds: 120, isBandShown: true, isSecondsShown: true, ttlSource: 'manual', lang: 'en' }, { configLang: 'en' })
+  await start($)
+  await step($)
+
+  expect(await (await pane($)).find({ type: 'Text', text: /^60:00 left$/ })).toBeDefined()
 })
 
 test('warns 5 minutes before expiry, then says it expired', async ($, on) => {
@@ -139,8 +185,8 @@ test('no redraws before the first hit or after a compaction', async ($, on) => {
 
   await step($)
   w.nowWrites = 0
-  await w.clock.advance(3000)
-  expect(w.nowWrites).toBe(3)
+  await w.clock.advance(MIN)
+  expect(w.nowWrites).toBe(1)
 
   await (await band($, 'terminal')).press({ key: 'compact' })
   expect(w.compactions).toBe(1)
@@ -172,11 +218,41 @@ test('after expiry the timer redraws once a minute, then resumes on the next hit
 
   await step($)
   w.nowWrites = 0
-  await w.clock.advance(3000)
-  expect(w.nowWrites).toBe(3)
+  await w.clock.advance(MIN)
+  expect(w.nowWrites).toBe(1)
 
   await w.clock.advance(60 * MIN)
   expect(w.toasts.filter(t => t.includes('Cache expired'))).toHaveLength(2)
+})
+
+test('while minutes are shown the timer redraws once a minute, then every second', { timeoutMs: 20_000 }, async ($, on) => {
+  const w = world(on)
+  await start($)
+  await step($)
+
+  w.nowWrites = 0
+  await w.clock.advance(59_000)
+  expect(w.nowWrites).toBe(0)
+  await w.clock.advance(1000)
+  expect(w.nowWrites).toBe(1)
+  await w.clock.advance(2 * MIN)
+  expect(w.nowWrites).toBe(3)
+
+  await w.clock.advance(52 * MIN)
+  w.nowWrites = 0
+  await w.clock.advance(10_000)
+  expect(w.nowWrites).toBe(10)
+})
+
+test('with seconds on the timer redraws every second', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await step($)
+  await cache($, 'seconds on')
+
+  w.nowWrites = 0
+  await w.clock.advance(10_000)
+  expect(w.nowWrites).toBe(10)
 })
 
 test('auto-compact fires once, before expiry, when switched on', async ($, on) => {
@@ -239,7 +315,7 @@ test('a read after a 10 minute gap proves a 1h TTL', async ($, on) => {
 
   const ui = await pane($)
   expect(await ui.find({ type: 'Text', text: /TTL \(detected\)/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /\/ 60:00/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^60 \/ 60 min left$/ })).toBeDefined()
 })
 
 test('a write with no read after a 10 minute gap proves a 5m TTL', async ($, on) => {
@@ -252,7 +328,7 @@ test('a write with no read after a 10 minute gap proves a 5m TTL', async ($, on)
 
   const ui = await pane($)
   expect(await ui.find({ type: 'Text', text: /TTL \(detected\)/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /\/ 05:00/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^05:00 left$/ })).toBeDefined()
 })
 
 
@@ -282,7 +358,7 @@ test('lang zh-TW in userConfig draws in Traditional Chinese', { options: { lang:
   }
   const ui = await pane($)
   expect(await ui.find({ type: 'Text', text: /TTL（預設）/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /剩餘 60:00 \/ 60:00/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^剩餘 60 \/ 60 分$/ })).toBeDefined()
 })
 
 test('lang zh-TW in userConfig reminds in Traditional Chinese', { options: { lang: 'zh-TW' } }, async ($, on) => {

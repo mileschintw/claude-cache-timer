@@ -10,12 +10,15 @@ const CONFIG_LANG_KEY = 'configLang'
 /** Below this context size a compaction saves too little to be worth losing detail. */
 const MIN_COMPACT_TOKENS = 20_000
 const HISTORY = 30
+/** From this much time left the countdown shows seconds; above it, whole minutes. */
+const SECONDS_SHOWN_FROM_MS = 5 * 60_000
 
 const DEFAULTS: CacheSettings = {
   ttl: '1h',
   isAutoCompact: false,
   leadSeconds: 120,
   isBandShown: true,
+  isSecondsShown: false,
   ttlSource: 'default',
   lang: 'en',
 }
@@ -94,7 +97,7 @@ export const STRINGS = {
   en: {
     notifyTitle: 'Cache timer',
     bandPrefix: 'cache',
-    commandDescription: 'Prompt cache timer: open the pane, or auto on|off, ttl 5m|1h, band on|off, lang en|zh-TW, compact',
+    commandDescription: 'Prompt cache timer: open the pane, or auto on|off, ttl 5m|1h, band on|off, seconds on|off, lang en|zh-TW, compact',
     paneTitle: 'Prompt cache',
     on: 'on',
     off: 'off',
@@ -119,9 +122,10 @@ export const STRINGS = {
     autoReply: (onOff: string) => `Auto-compact before expiry: ${onOff}`,
     ttlReply: (ttl: string) => `Cache TTL set to ${ttl}`,
     bandReply: (shown: string) => `Band above the prompt: ${shown}`,
+    secondsReply: (onOff: string) => `Always show seconds: ${onOff}`,
     langReply: 'Language set to English',
     compactReply: 'Asked to compact the conversation.',
-    usage: 'Usage: /cache [auto on|off] [ttl 5m|1h] [band on|off] [lang en|zh-TW] [compact]',
+    usage: 'Usage: /cache [auto on|off] [ttl 5m|1h] [band on|off] [seconds on|off] [lang en|zh-TW] [compact]',
     autoLabel: (onOff: string) => `auto-compact ${onOff}`,
     compactNow: 'Compact',
     pane: 'Pane',
@@ -130,7 +134,7 @@ export const STRINGS = {
     bandRewrite: (tok: string) => ` · next message re-writes about ${tok} tokens`,
     compactedHint: 'Compacted; the next message writes a fresh cache',
     noCacheHint: 'No cache yet; the timer starts after your first message',
-    remaining: (c: string, total: string) => `${c} / ${total} left`,
+    remaining: (c: string) => `${c} left`,
     lastLine: (ago: string) => `Last read/write: ${ago}`,
     tokensLine: (r: string, w: string, u: string) => `This request read ${r} · wrote ${w} · uncached ${u}`,
     rewriteLine: (tok: string) => `After expiry, about ${tok} tokens are re-written`,
@@ -143,16 +147,18 @@ export const STRINGS = {
     autoCompact: 'Auto-compact before expiry',
     lead: 'Lead',
     minutes: (m: number) => `${m} min`,
+    minutesOf: (m: number, total: number) => `${m} / ${total} min`,
     leadNote: (sec: number, min: string) =>
       `Compacts with ${sec}s left (at most 1 minute ahead on a 5m TTL); never auto-compacts under ${min} tokens of context.`,
     band: 'Band above the prompt',
+    seconds: 'Always show seconds',
     language: 'Language',
     compactConversation: 'Compact conversation now',
   },
   'zh-TW': {
     notifyTitle: '快取計時器',
     bandPrefix: 'cache',
-    commandDescription: 'Prompt 快取計時器：開啟面板，或 auto on|off、ttl 5m|1h、band on|off、lang en|zh-TW、compact',
+    commandDescription: 'Prompt 快取計時器：開啟面板，或 auto on|off、ttl 5m|1h、band on|off、seconds on|off、lang en|zh-TW、compact',
     paneTitle: 'Prompt 快取',
     on: '開',
     off: '關',
@@ -177,9 +183,10 @@ export const STRINGS = {
     autoReply: (onOff: string) => `到期前自動壓縮：${onOff}`,
     ttlReply: (ttl: string) => `快取 TTL 設為 ${ttl}`,
     bandReply: (shown: string) => `提示框上方進度條：${shown}`,
+    secondsReply: (onOff: string) => `永遠顯示秒數：${onOff}`,
     langReply: '介面語言已設為繁體中文',
     compactReply: '已要求壓縮對話。',
-    usage: '用法：/cache [auto on|off] [ttl 5m|1h] [band on|off] [lang en|zh-TW] [compact]',
+    usage: '用法：/cache [auto on|off] [ttl 5m|1h] [band on|off] [seconds on|off] [lang en|zh-TW] [compact]',
     autoLabel: (onOff: string) => `自動壓縮 ${onOff}`,
     compactNow: '立即壓縮',
     pane: '面板',
@@ -188,7 +195,7 @@ export const STRINGS = {
     bandRewrite: (tok: string) => ` · 下一則訊息會重新寫入約 ${tok} tokens`,
     compactedHint: '已壓縮，下一則訊息會寫入新的快取',
     noCacheHint: '還沒有快取，送出第一則訊息後開始計時',
-    remaining: (c: string, total: string) => `剩餘 ${c} / ${total}`,
+    remaining: (c: string) => `剩餘 ${c}`,
     lastLine: (ago: string) => `上次讀寫：${ago}`,
     tokensLine: (r: string, w: string, u: string) => `這次讀取 ${r} · 寫入 ${w} · 未快取 ${u}`,
     rewriteLine: (tok: string) => `過期後重新寫入約 ${tok} tokens`,
@@ -201,15 +208,27 @@ export const STRINGS = {
     autoCompact: '到期前自動壓縮',
     lead: '提前',
     minutes: (m: number) => `${m} 分`,
+    minutesOf: (m: number, total: number) => `${m} / ${total} 分`,
     leadNote: (sec: number, min: string) =>
       `實際在剩 ${sec} 秒時壓縮（5m TTL 最多提前 1 分鐘）；上下文不到 ${min} tokens 時不自動壓縮。`,
     band: '提示框上方進度條',
+    seconds: '永遠顯示秒數',
     language: '語言',
     compactConversation: '立即壓縮對話',
   },
 } as const
 
 type Strings = (typeof STRINGS)[CacheLang]
+
+/**
+ * Time left as shown in the band and pane: whole minutes of the total, rounded
+ * up, while more than 5 minutes are left; from there (or always, with seconds
+ * on) `mm:ss` with no total.
+ */
+export const countdown = (lang: CacheLang, remainingMs: number, totalMs: number, isSecondsShown: boolean) =>
+  isSecondsShown || remainingMs <= SECONDS_SHOWN_FROM_MS
+    ? clock(remainingMs)
+    : STRINGS[lang].minutesOf(Math.ceil(remainingMs / 60_000), Math.round(totalMs / 60_000))
 
 const LANG_LABEL: Record<CacheLang, string> = { en: 'English', 'zh-TW': '繁體中文' }
 
@@ -244,7 +263,12 @@ async function summary($: EngineInterface) {
   const L: Strings = STRINGS[s.lang]
   const t = await $.clock.now()
   const remaining = hit === null ? 0 : hit.at + ttlMs(s.ttl) - t
-  const head = hit === null ? L.noTimer : remaining > 0 ? L.remainingHead(clock(remaining)) : L.expired
+  const head =
+    hit === null
+      ? L.noTimer
+      : remaining > 0
+        ? L.remainingHead(countdown(s.lang, remaining, ttlMs(s.ttl), s.isSecondsShown))
+        : L.expired
   const rate = st.requests === 0 ? '—' : `${Math.round((st.hits / st.requests) * 100)}%`
 
   return [
@@ -299,10 +323,18 @@ async function compactNow($: EngineInterface, why: 'auto' | 'manual') {
   }
 }
 
+/** The time-driven text the band and pane show at `t`: the countdown and "N min ago". */
+const shownAt = (s: CacheSettings, hit: CacheHit, t: number) => {
+  const remaining = hit.at + ttlMs(s.ttl) - t
+  const left = remaining > 0 ? countdown(s.lang, remaining, ttlMs(s.ttl), s.isSecondsShown) : ''
+
+  return `${left}|${wholeMinutes(t - hit.at)}`
+}
+
 /**
- * Writes `now` (which redraws the band and pane) only while something on screen
- * changes: every second while counting down, once a minute after expiry for
- * "N min ago", and never while no cache is timed.
+ * Writes `now` (which redraws the band and pane) only when what they show
+ * changes: once a minute while minutes are shown or after expiry, every second
+ * while seconds are, and never while no cache is timed.
  */
 async function tick($: EngineInterface) {
   const t = await $.clock.now()
@@ -310,16 +342,13 @@ async function tick($: EngineInterface) {
   if (hit === null) return
 
   const s = await read($, settings)
+  if (shownAt(s, hit, t) !== shownAt(s, hit, await read($, now))) await update($, now, () => t)
+
   const remaining = hit.at + ttlMs(s.ttl) - t
   const state = await read($, alert)
 
   if (remaining <= 0) {
-    if (state === 'expired') {
-      if (wholeMinutes(t - hit.at) !== wholeMinutes((await read($, now)) - hit.at)) await update($, now, () => t)
-
-      return
-    }
-    await update($, now, () => t)
+    if (state === 'expired') return
     await update($, alert, () => 'expired')
     const message = STRINGS[s.lang].expiredToast(tokens(contextOf(hit)))
     $.ui.toast(message, { timeoutMs: 8000 })
@@ -327,8 +356,6 @@ async function tick($: EngineInterface) {
 
     return
   }
-
-  await update($, now, () => t)
 
   const isWorthCompacting = contextOf(hit) >= MIN_COMPACT_TOKENS
   if (s.isAutoCompact && isWorthCompacting && remaining <= leadMs(s) && compactTriedFor !== hit.at) {
@@ -362,7 +389,7 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: 'cache',
       description: (await strings($)).commandDescription,
-      argumentHint: '[auto on|off] [ttl 5m|1h] [band on|off] [lang en|zh-TW] [compact]',
+      argumentHint: '[auto on|off] [ttl 5m|1h] [band on|off] [seconds on|off] [lang en|zh-TW] [compact]',
     })
 
     ticker?.cancel()
@@ -460,6 +487,12 @@ export const register: Register = (on, options) => {
       return { text: L.bandReply(value === 'on' ? L.shown : L.hidden) }
     }
 
+    if (verb === 'seconds' && (value === 'on' || value === 'off')) {
+      await saveSettings($, s => ({ ...s, isSecondsShown: value === 'on' }))
+
+      return { text: L.secondsReply(value === 'on' ? L.on : L.off) }
+    }
+
     const lang = langOf(value)
     if (verb === 'lang' && lang !== undefined) {
       await saveSettings($, s => ({ ...s, lang }))
@@ -497,7 +530,7 @@ export const register: Register = (on, options) => {
         <Box flexDirection="row" gap={1}>
           {remaining > 0 ? (
             <Text color={tone(fraction)}>
-              {L.bandPrefix} {bar(fraction, width)} {clock(remaining)} / {clock(total)}
+              {L.bandPrefix} {bar(fraction, width)} {countdown(s.lang, remaining, total, s.isSecondsShown)}
             </Text>
           ) : (
             <Text color="error">{L.expired}</Text>
@@ -535,7 +568,7 @@ export const register: Register = (on, options) => {
       ) : remaining > 0 ? (
         <Box flexDirection="column">
           <Text bold color={tone(fraction)}>
-            {L.remaining(clock(remaining), clock(total))}
+            {L.remaining(countdown(s.lang, remaining, total, s.isSecondsShown))}
           </Text>
           <Text color={tone(fraction)}>{bar(fraction, width)}</Text>
         </Box>
@@ -598,6 +631,15 @@ export const register: Register = (on, options) => {
               label={s.isBandShown ? L.shown : L.hidden}
               variant={s.isBandShown ? 'primary' : 'secondary'}
               onPress={() => saveSettings($, x => ({ ...x, isBandShown: !x.isBandShown }))}
+            />
+          </Box>
+          <Box flexDirection="row" gap={1}>
+            <Text>{L.seconds}</Text>
+            <Button
+              key="seconds"
+              label={s.isSecondsShown ? L.on : L.off}
+              variant={s.isSecondsShown ? 'primary' : 'secondary'}
+              onPress={() => saveSettings($, x => ({ ...x, isSecondsShown: !x.isSecondsShown }))}
             />
           </Box>
           <Box flexDirection="row" gap={1}>

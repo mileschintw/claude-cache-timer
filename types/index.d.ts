@@ -8,6 +8,8 @@ export type CacheSettings = {
   /** Seconds before expiry that auto-compact fires. */
   leadSeconds: number
   isBandShown: boolean
+  /** Show `mm:ss` the whole time, not whole minutes until 5 minutes are left. */
+  isSecondsShown: boolean
   /** Where the TTL came from: the default, a response that proved it, a model switch, or the person. */
   ttlSource: 'default' | 'observed' | 'switch' | 'manual'
   /** UI language. */
