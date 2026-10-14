@@ -215,8 +215,10 @@ const LANG_LABEL: Record<CacheLang, string> = { en: 'English', 'zh-TW': '繁體�
 
 const strings = async ($: EngineInterface): Promise<Strings> => STRINGS[(await read($, settings)).lang] ?? STRINGS.en
 
+const wholeMinutes = (ms: number) => Math.floor(ms / 60_000)
+
 const ago = (L: Strings, ms: number) => {
-  const minutes = Math.floor(ms / 60_000)
+  const minutes = wholeMinutes(ms)
 
   return minutes < 1 ? L.lessThanMinuteAgo : L.minutesAgo(minutes)
 }
@@ -297,10 +299,13 @@ async function compactNow($: EngineInterface, why: 'auto' | 'manual') {
   }
 }
 
+/**
+ * Writes `now` (which redraws the band and pane) only while something on screen
+ * changes: every second while counting down, once a minute after expiry for
+ * "N min ago", and never while no cache is timed.
+ */
 async function tick($: EngineInterface) {
   const t = await $.clock.now()
-  await update($, now, () => t)
-
   const hit = await read($, last)
   if (hit === null) return
 
@@ -309,7 +314,12 @@ async function tick($: EngineInterface) {
   const state = await read($, alert)
 
   if (remaining <= 0) {
-    if (state === 'expired') return
+    if (state === 'expired') {
+      if (wholeMinutes(t - hit.at) !== wholeMinutes((await read($, now)) - hit.at)) await update($, now, () => t)
+
+      return
+    }
+    await update($, now, () => t)
     await update($, alert, () => 'expired')
     const message = STRINGS[s.lang].expiredToast(tokens(contextOf(hit)))
     $.ui.toast(message, { timeoutMs: 8000 })
@@ -317,6 +327,8 @@ async function tick($: EngineInterface) {
 
     return
   }
+
+  await update($, now, () => t)
 
   const isWorthCompacting = contextOf(hit) >= MIN_COMPACT_TOKENS
   if (s.isAutoCompact && isWorthCompacting && remaining <= leadMs(s) && compactTriedFor !== hit.at) {

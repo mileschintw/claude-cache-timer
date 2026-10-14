@@ -9,6 +9,8 @@ type World = {
   compactions: number
   clock: ReturnType<typeof mock.clock>
   usage: { read: number; write: number }
+  /** Writes of the `now` atom, each of which redraws the band and pane. */
+  nowWrites: number
 }
 
 function world(on: On, settings?: Record<string, unknown>, store: Record<string, unknown> = {}): World {
@@ -17,8 +19,14 @@ function world(on: On, settings?: Record<string, unknown>, store: Record<string,
     compactions: 0,
     clock: mock.clock(on, { now: 1_000_000 }),
     usage: { read: 150_000, write: 2_000 },
+    nowWrites: 0,
   }
   mock.store(on, settings ? { ...store, settings } : store)
+  on('state.set', (_$, e, next) => {
+    if (e.plugin === 'cache-timer' && e.key === 'now') w.nowWrites += 1
+
+    return next(e)
+  })
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   // The engine's own band, standing in for an empty one.
   on('ui.render', ($, e) => {
@@ -85,6 +93,13 @@ async function pane($: Engine) {
   })
 }
 
+const band = ($: Engine, surface: 'terminal' | 'desktop') =>
+  $.ui.mount({
+    plugin: 'cache-timer',
+    surface,
+    component: 'AbovePrompt',
+    props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 100 } as never,
+  })
 test('band counts down from the TTL after a cache hit', async ($, on) => {
   const w = world(on)
   await start($)
@@ -113,6 +128,55 @@ test('warns 5 minutes before expiry, then says it expired', async ($, on) => {
   await w.clock.advance(5 * MIN)
   expect(w.toasts.some(t => t.includes('Cache expired'))).toBe(true)
   expect(w.compactions).toBe(0)
+})
+
+test('no redraws before the first hit or after a compaction', async ($, on) => {
+  const w = world(on)
+  await start($)
+
+  await w.clock.advance(5000)
+  expect(w.nowWrites).toBe(0)
+
+  await step($)
+  w.nowWrites = 0
+  await w.clock.advance(3000)
+  expect(w.nowWrites).toBe(3)
+
+  await (await band($, 'terminal')).press({ key: 'compact' })
+  expect(w.compactions).toBe(1)
+  w.nowWrites = 0
+  await w.clock.advance(5000)
+  expect(w.nowWrites).toBe(0)
+})
+
+test('after expiry the timer redraws once a minute, then resumes on the next hit', { timeoutMs: 20_000 }, async ($, on) => {
+  const w = world(on)
+  await start($)
+  await step($)
+
+  await w.clock.advance(60 * MIN)
+  expect(w.toasts.filter(t => t.includes('Cache expired'))).toHaveLength(1)
+
+  w.nowWrites = 0
+  await w.clock.advance(59_000)
+  expect(w.nowWrites).toBe(0)
+
+  await w.clock.advance(1000)
+  expect(w.nowWrites).toBe(1)
+  const ui = await pane($)
+  expect(await ui.find({ type: 'Text', text: /Last read\/write: 61 min ago/ })).toBeDefined()
+
+  await w.clock.advance(5 * MIN)
+  expect(w.nowWrites).toBe(6)
+  expect(w.toasts.filter(t => t.includes('Cache expired'))).toHaveLength(1)
+
+  await step($)
+  w.nowWrites = 0
+  await w.clock.advance(3000)
+  expect(w.nowWrites).toBe(3)
+
+  await w.clock.advance(60 * MIN)
+  expect(w.toasts.filter(t => t.includes('Cache expired'))).toHaveLength(2)
 })
 
 test('auto-compact fires once, before expiry, when switched on', async ($, on) => {
@@ -191,13 +255,6 @@ test('a write with no read after a 10 minute gap proves a 5m TTL', async ($, on)
   expect(await ui.find({ type: 'Text', text: /\/ 05:00/ })).toBeDefined()
 })
 
-const band = ($: Engine, surface: 'terminal' | 'desktop') =>
-  $.ui.mount({
-    plugin: 'cache-timer',
-    surface,
-    component: 'AbovePrompt',
-    props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 100 } as never,
-  })
 
 test('the UI is English by default', async ($, on) => {
   const w = world(on)
