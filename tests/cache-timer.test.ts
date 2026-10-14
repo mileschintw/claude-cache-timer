@@ -6,6 +6,8 @@ const MIN = 60_000
 
 type World = {
   toasts: string[]
+  /** Each `$.ui.status` text, in order; undefined clears the line. */
+  statuses: (string | undefined)[]
   compactions: number
   clock: ReturnType<typeof mock.clock>
   usage: { read: number; write: number }
@@ -20,6 +22,7 @@ type World = {
 function world(on: On, settings?: Record<string, unknown>, store: Record<string, unknown> = {}): World {
   const w: World = {
     toasts: [],
+    statuses: [],
     compactions: 0,
     clock: mock.clock(on, { now: 1_000_000 }),
     usage: { read: 150_000, write: 2_000 },
@@ -55,6 +58,11 @@ function world(on: On, settings?: Record<string, unknown>, store: Record<string,
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('ui.toast', ($, e) => {
     w.toasts.push(e.text)
+
+    return { value: undefined }
+  })
+  on('ui.status', (_$, e) => {
+    w.statuses.push(e.text)
 
     return { value: undefined }
   })
@@ -197,6 +205,41 @@ test('warns 5 minutes before expiry, then says it expired', async ($, on) => {
   await w.clock.advance(5 * MIN)
   expect(w.toasts.some(t => t.includes('Cache expired'))).toBe(true)
   expect(w.compactions).toBe(0)
+})
+
+test('the status line follows the countdown, says when it expired, and clears after a compaction', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await w.clock.advance(5000)
+  expect(w.statuses).toHaveLength(0)
+
+  await step($)
+  await w.clock.advance(1000)
+  expect(w.statuses.at(-1)).toBe('Cache has 60 / 60 min left')
+
+  await w.clock.advance(MIN)
+  expect(w.statuses.at(-1)).toBe('Cache has 59 / 60 min left')
+
+  await w.clock.advance(60 * MIN)
+  expect(w.statuses.at(-1)).toBe('Cache expired')
+
+  const count = w.statuses.length
+  await w.clock.advance(5000)
+  expect(w.statuses).toHaveLength(count)
+
+  await step($)
+  await (await band($, 'terminal')).press({ key: 'compact' })
+  await w.clock.advance(1000)
+  expect(w.statuses.at(-1)).toBeUndefined()
+})
+
+test('the status line is in Traditional Chinese with lang zh-TW', { options: { lang: 'zh-TW' } }, async ($, on) => {
+  const w = world(on)
+  await start($)
+  await step($)
+  await w.clock.advance(1000)
+
+  expect(w.statuses.at(-1)).toBe('快取剩 60 / 60 分')
 })
 
 test('no redraws before the first hit or after a compaction', async ($, on) => {
@@ -576,6 +619,13 @@ test('after a restart the band and pane show the saved hit right away', async ($
   expect(await p.find({ type: 'Text', text: /read 150k · wrote 2k/ })).toBeDefined()
   expect(await p.find({ type: 'Text', text: /\(1\/1 requests\)/ })).toBeDefined()
   expect(w.toasts).toHaveLength(0)
+})
+
+test('after a restart the status line shows the saved hit right away', async ($, on) => {
+  const w = world(on, undefined, savedSession(1_000_000 - 10 * MIN))
+  await start($)
+
+  expect(w.statuses.at(-1)).toBe('Cache has 50 / 60 min left')
 })
 
 test('a hit that expired while the app was closed shows as expired, with no toast', async ($, on) => {

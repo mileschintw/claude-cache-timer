@@ -450,12 +450,36 @@ const shownAt = (s: CacheSettings, hit: CacheHit, t: number) => {
   return `${left}|${wholeMinutes(t - hit.at)}`
 }
 
+/** The status line's text as last set; undefined while it is clear. */
+let shownStatus: string | undefined
+
+/**
+ * Keeps the countdown in the status line too, which stays visible where the
+ * host hides the band (under the desktop app's dialogs and cards). Sets it only
+ * when its text changes, and clears it while no cache is timed.
+ */
+async function showStatus($: EngineInterface) {
+  const hit = await read($, last)
+  let text: string | undefined
+  if (hit !== null) {
+    const s = await read($, settings)
+    const L: Strings = STRINGS[s.lang]
+    const remaining = hit.at + ttlMs(s.ttl) - (await $.clock.now())
+    text = remaining > 0 ? L.remainingHead(countdown(s.lang, remaining, ttlMs(s.ttl), s.isSecondsShown)) : L.expired
+  }
+  if (text === shownStatus) return
+
+  shownStatus = text
+  $.ui.status(text)
+}
+
 /**
  * Writes `now` (which redraws the band and pane) only when what they show
  * changes: once a minute while minutes are shown or after expiry, every second
  * while seconds are, and never while no cache is timed.
  */
 async function tick($: EngineInterface) {
+  await showStatus($)
   const t = await $.clock.now()
   const hit = await read($, last)
   if (hit === null) return
@@ -523,6 +547,7 @@ export const register: Register = (on, options) => {
     const isRestored = await restoreSession($)
     debugLog($, `session ${await $.session.id()} started, saved hit ${isRestored ? 'restored' : 'not found'}`)
     await pruneSessions($)
+    await showStatus($)
 
     ticker?.cancel()
     ticker = $.clock.every(1000, () => void tick($))

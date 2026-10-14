@@ -20,6 +20,7 @@ On a long session that is a real cost, and nothing in the UI tells you when it i
 ## Features
 
 - **Countdown band above the prompt.** A progress bar that goes from green to yellow to red, with the time left (whole minutes, such as `27 / 60 min`, until the last 5 minutes, then `mm:ss`), the last read and write sizes, and buttons to compact, open the pane, or hide the band.
+- **Countdown in the status line.** The time left also shows in the status line, such as `Cache has 27 / 60 min left`, or `Cache expired`.
 - **`/cache` pane.** Shows the time left, this session's hit rate, expiries and compactions, and a sparkline of how much of each request the cache served. It also holds the settings.
 - **Reminders.** A toast 5 minutes before a 1h cache expires (1 minute before a 5m one), and another when it has expired.
 - **Optional auto-compact.** Off by default. When on, it compacts the conversation 1, 2 or 5 minutes before expiry, while the cache is still warm.
@@ -99,6 +100,7 @@ The latest change wins. A language picked in the pane or with `/cache lang` is s
 
 - **No system notifications in the desktop app.** There, reminders are in-app toasts only. If you have walked away from the window, you won't see them.
 - **The countdown is an estimate.** It is measured from when the response finished. The API's own clock may differ by a few seconds.
+- **The band hides while a dialog replaces the prompt.** Claude Code doesn't draw the band while a dialog takes the prompt's place: a question (in the terminal), a plan approval, or the desktop app's next-step card. The band comes back once you answer. In the desktop app the status line stays visible under the next-step card, so the countdown is still there. In the terminal the status line is hidden too.
 - **Compaction loses detail.** That is why auto-compact is off by default.
 
 ## Development
