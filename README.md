@@ -78,7 +78,7 @@ Settings are saved across sessions.
 
 The band, pane, reminders and `/cache` replies are drawn in English (`en`, the default) or Traditional Chinese (`zh-TW`). There are three ways to switch:
 
-- **Plugin setting.** The `lang` option of the plugin, a picker in `/config` (stored in `~/.claude/settings.json` under `pluginConfigs["cache-timer"].options.lang`). You can also choose it when you install.
+- **Plugin setting.** The `lang` option of the plugin, a picker in `/config`. You can also choose it when you install.
 - **The pane.** The *Language* row in `/cache` has a button for each language.
 - **`/cache lang en`** or **`/cache lang zh-TW`**.
 

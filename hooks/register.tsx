@@ -92,6 +92,9 @@ export const langOf = (value: unknown): CacheLang | undefined =>
 /** Every UI string, keyed by language. */
 export const STRINGS = {
   en: {
+    notifyTitle: 'Cache timer',
+    bandPrefix: 'cache',
+    commandDescription: 'Prompt cache timer: open the pane, or auto on|off, ttl 5m|1h, band on|off, lang en|zh-TW, compact',
     paneTitle: 'Prompt cache',
     on: 'on',
     off: 'off',
@@ -147,6 +150,9 @@ export const STRINGS = {
     compactConversation: 'Compact conversation now',
   },
   'zh-TW': {
+    notifyTitle: '快取計時器',
+    bandPrefix: 'cache',
+    commandDescription: 'Prompt 快取計時器：開啟面板，或 auto on|off、ttl 5m|1h、band on|off、lang en|zh-TW、compact',
     paneTitle: 'Prompt 快取',
     on: '開',
     off: '關',
@@ -222,7 +228,7 @@ let compactTriedFor = 0
 /** A native notification where the surface has one; the toast is the reminder everywhere. */
 async function notify($: EngineInterface, text: string) {
   try {
-    await $.ui.notify(text, { title: 'Cache timer' })
+    await $.ui.notify(text, { title: (await strings($)).notifyTitle })
   } catch {
     // No notification channel on this surface.
   }
@@ -343,7 +349,7 @@ export const register: Register = (on, options) => {
 
     await $.command.register({
       name: 'cache',
-      description: 'Prompt cache timer: open the pane, or auto on|off, ttl 5m|1h, band on|off, lang en|zh-TW, compact',
+      description: (await strings($)).commandDescription,
       argumentHint: '[auto on|off] [ttl 5m|1h] [band on|off] [lang en|zh-TW] [compact]',
     })
 
@@ -479,7 +485,7 @@ export const register: Register = (on, options) => {
         <Box flexDirection="row" gap={1}>
           {remaining > 0 ? (
             <Text color={tone(fraction)}>
-              cache {bar(fraction, width)} {clock(remaining)} / {clock(total)}
+              {L.bandPrefix} {bar(fraction, width)} {clock(remaining)} / {clock(total)}
             </Text>
           ) : (
             <Text color="error">{L.expired}</Text>

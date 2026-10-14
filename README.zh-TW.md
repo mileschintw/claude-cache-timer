@@ -78,7 +78,7 @@ git clone https://github.com/mileschintw/claude-cache-timer.git ~/.claude/mods/c
 
 進度條、面板、提醒和 `/cache` 的回覆可以用英文（`en`，預設）或繁體中文（`zh-TW`）顯示。切換方式有三種：
 
-- **Plugin 設定**：plugin 的 `lang` 選項，在 `/config` 裡是一個下拉選單（存在 `~/.claude/settings.json` 的 `pluginConfigs["cache-timer"].options.lang`）。安裝時也可以直接選。
+- **Plugin 設定**：plugin 的 `lang` 選項，在 `/config` 裡是一個下拉選單。安裝時也可以直接選。
 - **面板**：`/cache` 面板的「語言」那一列，每種語言各有一個按鈕。
 - **指令**：`/cache lang en` 或 `/cache lang zh-TW`。
 
