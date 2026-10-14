@@ -9,17 +9,17 @@ permissions:
   contents: read
 
 env:
-  CLAUDE_CODE_VERSION: 2.1.292
+  CLAUDE_CODE_VERSION: 2.1.300
   DISABLE_AUTOUPDATER: '1'
 
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
       - run: npm install -g @anthropic-ai/claude-code@${{ env.CLAUDE_CODE_VERSION }}
       - run: claude --version
       - run: claude plugin validate .
@@ -40,7 +40,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
