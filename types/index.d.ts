@@ -1,5 +1,7 @@
 export type CacheTtl = '5m' | '1h'
 
+export type CacheLang = 'en' | 'zh-TW'
+
 export type CacheSettings = {
   ttl: CacheTtl
   isAutoCompact: boolean
@@ -8,6 +10,8 @@ export type CacheSettings = {
   isBandShown: boolean
   /** Where the TTL came from: the default, a response that proved it, a model switch, or the person. */
   ttlSource: 'default' | 'observed' | 'switch' | 'manual'
+  /** UI language. */
+  lang: CacheLang
 }
 
 export type CacheHit = {

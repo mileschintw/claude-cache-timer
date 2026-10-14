@@ -5,11 +5,11 @@
 A Claude Code mod that counts down your prompt cache TTL, warns you before it expires, and can compact the conversation just before it lapses, so you don't pay to re-cache a long context.
 
 ```
-cache ██████████████░░░░░░░░░░░░░░░░ 27:43 / 60:00  自動壓縮 關  [ 立即壓縮 ] [ 面板 ] [ 隱藏 ]
-上次讀寫 32 分鐘前 · 讀取 182k · 寫入 3k
+cache ██████████████░░░░░░░░░░░░░░░░ 27:43 / 60:00  auto-compact off  [ Compact ] [ Pane ] [ Hide ]
+Last read/write 32 min ago · read 182k · wrote 3k
 ```
 
-> The interface text is in Traditional Chinese for now: 立即壓縮 = compact now, 面板 = pane, 隱藏 = hide, 自動壓縮 = auto-compact.
+The interface is in English by default and also available in Traditional Chinese (see [Language](#language)).
 
 ## Why
 
@@ -24,6 +24,7 @@ On a long session that is a real cost, and nothing in the UI tells you when it i
 - **Reminders.** A toast 5 minutes before a 1h cache expires (1 minute before a 5m one), and another when it has expired.
 - **Optional auto-compact.** Off by default. When on, it compacts the conversation 1, 2 or 5 minutes before expiry, while the cache is still warm.
 - **One-click compact.** From the band or the pane, or with `/cache compact`.
+- **English or Traditional Chinese.** Pick the interface language in the plugin's settings, in the pane, or with `/cache lang`.
 - **TTL detection.** The TTL starts at 1h and corrects itself from what the API reports. A cache read after more than 5 minutes proves 1h. A full re-write after 5 to 55 minutes proves 5m. A model switch also reports the TTL directly.
 
 ## Install
@@ -68,9 +69,20 @@ The band appears after your first message. Everything else lives in `/cache`:
 | `/cache auto on` / `off` | Turn auto-compact on or off |
 | `/cache ttl 5m` / `1h` | Set the TTL by hand |
 | `/cache band on` / `off` | Show or hide the band above the prompt |
+| `/cache lang en` / `zh-TW` | Switch the interface language |
 | `/cache compact` | Compact the conversation now |
 
 Settings are saved across sessions.
+
+### Language
+
+The band, pane, reminders and `/cache` replies are drawn in English (`en`, the default) or Traditional Chinese (`zh-TW`). There are three ways to switch:
+
+- **Plugin setting.** The `lang` option of the plugin, a picker in `/config` (stored in `~/.claude/settings.json` under `pluginConfigs["cache-timer"].options.lang`). You can also choose it when you install.
+- **The pane.** The *Language* row in `/cache` has a button for each language.
+- **`/cache lang en`** or **`/cache lang zh-TW`**.
+
+The latest change wins. A language picked in the pane or with `/cache lang` is saved with the other settings and stays until the plugin setting itself changes; changing the plugin setting then switches the interface to the new value.
 
 ## How it works
 

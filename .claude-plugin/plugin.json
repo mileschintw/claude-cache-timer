@@ -1,11 +1,20 @@
 {
   "name": "cache-timer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Prompt cache TTL countdown: a band above the prompt, a /cache pane, expiry reminders and optional auto-compact before the cache lapses",
   "author": { "name": "mileschintw", "url": "https://github.com/mileschintw" },
   "homepage": "https://github.com/mileschintw/claude-cache-timer",
   "repository": "https://github.com/mileschintw/claude-cache-timer",
   "license": "MIT",
   "keywords": ["prompt-caching", "cache", "ttl", "compact", "mod"],
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "lang": {
+      "type": "string",
+      "title": "Language",
+      "description": "UI language of the band, pane, reminders and /cache replies",
+      "options": ["en", "zh-TW"],
+      "default": "en"
+    }
+  }
 }

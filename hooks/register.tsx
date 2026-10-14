@@ -1,10 +1,12 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, ModelUsage, Register } from 'claude-code'
 
-import type { CacheAlert, CacheHit, CacheSettings, CacheStats, CacheTtl } from '../types'
+import type { CacheAlert, CacheHit, CacheLang, CacheSettings, CacheStats, CacheTtl } from '../types'
 
 const PANE = 'cache-timer'
 const STORE_KEY = 'settings'
+/** The userConfig language last seen, so a change there wins over the stored one. */
+const CONFIG_LANG_KEY = 'configLang'
 /** Below this context size a compaction saves too little to be worth losing detail. */
 const MIN_COMPACT_TOKENS = 20_000
 const HISTORY = 30
@@ -15,6 +17,7 @@ const DEFAULTS: CacheSettings = {
   leadSeconds: 120,
   isBandShown: true,
   ttlSource: 'default',
+  lang: 'en',
 }
 
 const settings = atom({ plugin: 'cache-timer', key: 'settings' } as const, DEFAULTS)
@@ -80,10 +83,136 @@ export const contextOf = (hit: CacheHit) => hit.read + hit.write + hit.uncached
 
 const tone = (fraction: number) => (fraction > 0.5 ? 'success' : fraction > 0.15 ? 'warning' : 'error')
 
-const ago = (ms: number) => {
+export const LANGS = ['en', 'zh-TW'] as const
+
+/** Canonical language for a typed or configured value, case-insensitive. */
+export const langOf = (value: unknown): CacheLang | undefined =>
+  typeof value === 'string' ? LANGS.find(l => l.toLowerCase() === value.toLowerCase()) : undefined
+
+/** Every UI string, keyed by language. */
+export const STRINGS = {
+  en: {
+    paneTitle: 'Prompt cache',
+    on: 'on',
+    off: 'off',
+    shown: 'shown',
+    hidden: 'hidden',
+    lessThanMinuteAgo: 'under a minute ago',
+    minutesAgo: (m: number) => `${m} min ago`,
+    source: { default: 'default', observed: 'detected', switch: 'from model switch', manual: 'set by you' },
+    noTimer: 'No cache is being timed',
+    remainingHead: (c: string) => `Cache has ${c} left`,
+    expired: 'Cache expired',
+    summaryHead: (head: string, ttl: string, source: string) => `${head} (TTL ${ttl}, ${source})`,
+    summaryStats: (rate: string, hits: number, requests: number, expiries: number, compactions: number) =>
+      `Hit rate ${rate} (${hits}/${requests}) · ${expiries} expired · ${compactions} compacted`,
+    summaryAuto: (onOff: string, sec: number) => `Auto-compact before expiry: ${onOff}, ${sec}s ahead`,
+    compactSkipped: (why: string) => `Compaction skipped: ${why}`,
+    autoCompacted: 'Cache was about to expire, so the conversation was compacted',
+    busy: 'Claude is replying; compact once this turn ends',
+    expiredToast: (tok: string) => `Cache expired; the next message re-writes about ${tok} tokens`,
+    warnToast: (c: string) => `Cache has ${c} left; continuing now is cheapest`,
+    paneOpened: 'Opened the cache pane.',
+    autoReply: (onOff: string) => `Auto-compact before expiry: ${onOff}`,
+    ttlReply: (ttl: string) => `Cache TTL set to ${ttl}`,
+    bandReply: (shown: string) => `Band above the prompt: ${shown}`,
+    langReply: 'Language set to English',
+    compactReply: 'Asked to compact the conversation.',
+    usage: 'Usage: /cache [auto on|off] [ttl 5m|1h] [band on|off] [lang en|zh-TW] [compact]',
+    autoLabel: (onOff: string) => `auto-compact ${onOff}`,
+    compactNow: 'Compact',
+    pane: 'Pane',
+    hide: 'Hide',
+    bandLast: (ago: string, r: string, w: string) => `Last read/write ${ago} · read ${r} · wrote ${w}`,
+    bandRewrite: (tok: string) => ` · next message re-writes about ${tok} tokens`,
+    compactedHint: 'Compacted; the next message writes a fresh cache',
+    noCacheHint: 'No cache yet; the timer starts after your first message',
+    remaining: (c: string, total: string) => `${c} / ${total} left`,
+    lastLine: (ago: string) => `Last read/write: ${ago}`,
+    tokensLine: (r: string, w: string, u: string) => `This request read ${r} · wrote ${w} · uncached ${u}`,
+    rewriteLine: (tok: string) => `After expiry, about ${tok} tokens are re-written`,
+    thisSession: 'This session',
+    statsLine: (rate: string, hits: number, requests: number, expiries: number, compactions: number) =>
+      `Hit rate ${rate} (${hits}/${requests} requests) · ${expiries} expired · ${compactions} compacted`,
+    historyLine: (sp: string) => `Cached share per request: ${sp}`,
+    settings: 'Settings',
+    ttlLabel: (source: string) => `TTL (${source})`,
+    autoCompact: 'Auto-compact before expiry',
+    lead: 'Lead',
+    minutes: (m: number) => `${m} min`,
+    leadNote: (sec: number, min: string) =>
+      `Compacts with ${sec}s left (at most 1 minute ahead on a 5m TTL); never auto-compacts under ${min} tokens of context.`,
+    band: 'Band above the prompt',
+    language: 'Language',
+    compactConversation: 'Compact conversation now',
+  },
+  'zh-TW': {
+    paneTitle: 'Prompt 快取',
+    on: '開',
+    off: '關',
+    shown: '顯示',
+    hidden: '隱藏',
+    lessThanMinuteAgo: '不到 1 分鐘前',
+    minutesAgo: (m: number) => `${m} 分鐘前`,
+    source: { default: '預設', observed: '自動偵測', switch: '切換模型時回報', manual: '手動設定' },
+    noTimer: '目前沒有在計時的快取',
+    remainingHead: (c: string) => `快取剩 ${c}`,
+    expired: '快取已過期',
+    summaryHead: (head: string, ttl: string, source: string) => `${head}（TTL ${ttl}，${source}）`,
+    summaryStats: (rate: string, hits: number, requests: number, expiries: number, compactions: number) =>
+      `命中率 ${rate}（${hits}/${requests}）· 過期 ${expiries} 次 · 壓縮 ${compactions} 次`,
+    summaryAuto: (onOff: string, sec: number) => `到期前自動壓縮：${onOff}，提前 ${sec} 秒`,
+    compactSkipped: (why: string) => `壓縮被略過：${why}`,
+    autoCompacted: '快取快過期了，已自動壓縮對話',
+    busy: 'Claude 正在回覆，等這一輪結束再壓縮',
+    expiredToast: (tok: string) => `快取已過期，下一則訊息會重新寫入約 ${tok} tokens`,
+    warnToast: (c: string) => `快取剩 ${c}，這時回來繼續最省`,
+    paneOpened: '已開啟快取面板。',
+    autoReply: (onOff: string) => `到期前自動壓縮：${onOff}`,
+    ttlReply: (ttl: string) => `快取 TTL 設為 ${ttl}`,
+    bandReply: (shown: string) => `提示框上方進度條：${shown}`,
+    langReply: '介面語言已設為繁體中文',
+    compactReply: '已要求壓縮對話。',
+    usage: '用法：/cache [auto on|off] [ttl 5m|1h] [band on|off] [lang en|zh-TW] [compact]',
+    autoLabel: (onOff: string) => `自動壓縮 ${onOff}`,
+    compactNow: '立即壓縮',
+    pane: '面板',
+    hide: '隱藏',
+    bandLast: (ago: string, r: string, w: string) => `上次讀寫 ${ago} · 讀取 ${r} · 寫入 ${w}`,
+    bandRewrite: (tok: string) => ` · 下一則訊息會重新寫入約 ${tok} tokens`,
+    compactedHint: '已壓縮，下一則訊息會寫入新的快取',
+    noCacheHint: '還沒有快取，送出第一則訊息後開始計時',
+    remaining: (c: string, total: string) => `剩餘 ${c} / ${total}`,
+    lastLine: (ago: string) => `上次讀寫：${ago}`,
+    tokensLine: (r: string, w: string, u: string) => `這次讀取 ${r} · 寫入 ${w} · 未快取 ${u}`,
+    rewriteLine: (tok: string) => `過期後重新寫入約 ${tok} tokens`,
+    thisSession: '本 session',
+    statsLine: (rate: string, hits: number, requests: number, expiries: number, compactions: number) =>
+      `命中率 ${rate}（${hits}/${requests} 次請求）· 過期 ${expiries} 次 · 壓縮 ${compactions} 次`,
+    historyLine: (sp: string) => `每次請求的快取比例：${sp}`,
+    settings: '設定',
+    ttlLabel: (source: string) => `TTL（${source}）`,
+    autoCompact: '到期前自動壓縮',
+    lead: '提前',
+    minutes: (m: number) => `${m} 分`,
+    leadNote: (sec: number, min: string) =>
+      `實際在剩 ${sec} 秒時壓縮（5m TTL 最多提前 1 分鐘）；上下文不到 ${min} tokens 時不自動壓縮。`,
+    band: '提示框上方進度條',
+    language: '語言',
+    compactConversation: '立即壓縮對話',
+  },
+} as const
+
+type Strings = (typeof STRINGS)[CacheLang]
+
+const LANG_LABEL: Record<CacheLang, string> = { en: 'English', 'zh-TW': '繁體中文' }
+
+const strings = async ($: EngineInterface): Promise<Strings> => STRINGS[(await read($, settings)).lang] ?? STRINGS.en
+
+const ago = (L: Strings, ms: number) => {
   const minutes = Math.floor(ms / 60_000)
 
-  return minutes < 1 ? '不到 1 分鐘前' : `${minutes} 分鐘前`
+  return minutes < 1 ? L.lessThanMinuteAgo : L.minutesAgo(minutes)
 }
 
 let ticker: { cancel: () => void } | undefined
@@ -99,27 +228,26 @@ async function notify($: EngineInterface, text: string) {
   }
 }
 
-const SOURCE_LABEL = { default: '預設', observed: '自動偵測', switch: '切換模型時回報', manual: '手動設定' } as const
-
 /** The pane's figures as text, for a surface that places no pane. */
 async function summary($: EngineInterface) {
   const s = await read($, settings)
   const hit = await read($, last)
   const st = await read($, stats)
+  const L: Strings = STRINGS[s.lang]
   const t = await $.clock.now()
   const remaining = hit === null ? 0 : hit.at + ttlMs(s.ttl) - t
-  const head = hit === null ? '目前沒有在計時的快取' : remaining > 0 ? `快取剩 ${clock(remaining)}` : '快取已過期'
+  const head = hit === null ? L.noTimer : remaining > 0 ? L.remainingHead(clock(remaining)) : L.expired
   const rate = st.requests === 0 ? '—' : `${Math.round((st.hits / st.requests) * 100)}%`
 
   return [
-    `${head}（TTL ${s.ttl}，${SOURCE_LABEL[s.ttlSource]}）`,
-    `命中率 ${rate}（${st.hits}/${st.requests}）· 過期 ${st.expiries} 次 · 壓縮 ${st.compactions} 次`,
-    `到期前自動壓縮：${s.isAutoCompact ? '開' : '關'}，提前 ${Math.round(leadMs(s) / 1000)} 秒`,
+    L.summaryHead(head, s.ttl, L.source[s.ttlSource]),
+    L.summaryStats(rate, st.hits, st.requests, st.expiries, st.compactions),
+    L.summaryAuto(s.isAutoCompact ? L.on : L.off, Math.round(leadMs(s) / 1000)),
   ].join('\n')
 }
 
 async function openPane($: EngineInterface) {
-  const { isPlaced } = await $.ui.open({ id: PANE, title: 'Prompt cache' })
+  const { isPlaced } = await $.ui.open({ id: PANE, title: (await strings($)).paneTitle })
   if (!isPlaced) $.ui.toast(await summary($), { timeoutMs: 8000 })
 }
 
@@ -139,10 +267,11 @@ async function compactNow($: EngineInterface, why: 'auto' | 'manual') {
   isCompacting = true
 
   try {
+    const L = await strings($)
     const result = await $.session.compact()
 
     if (result.skip !== undefined) {
-      $.ui.toast(`壓縮被略過：${result.skip}`)
+      $.ui.toast(L.compactSkipped(result.skip))
 
       return
     }
@@ -151,12 +280,12 @@ async function compactNow($: EngineInterface, why: 'auto' | 'manual') {
     if ((await read($, last)) !== null) await markCompacted($)
 
     if (why === 'auto') {
-      $.ui.toast('快取快過期了，已自動壓縮對話')
-      void notify($, '快取快過期了，已自動壓縮對話')
+      $.ui.toast(L.autoCompacted)
+      void notify($, L.autoCompacted)
     }
   } catch {
     // Rejects while a turn runs: that turn's own requests keep the cache warm.
-    if (why === 'manual') $.ui.toast('Claude 正在回覆，等這一輪結束再壓縮')
+    if (why === 'manual') $.ui.toast((await strings($)).busy)
   } finally {
     isCompacting = false
   }
@@ -176,7 +305,7 @@ async function tick($: EngineInterface) {
   if (remaining <= 0) {
     if (state === 'expired') return
     await update($, alert, () => 'expired')
-    const message = `快取已過期，下一則訊息會重新寫入約 ${tokens(contextOf(hit))} tokens`
+    const message = STRINGS[s.lang].expiredToast(tokens(contextOf(hit)))
     $.ui.toast(message, { timeoutMs: 8000 })
     void notify($, message)
 
@@ -193,21 +322,29 @@ async function tick($: EngineInterface) {
 
   if (state === 'none' && remaining <= warnMs(s.ttl)) {
     await update($, alert, () => 'warned')
-    const message = `快取剩 ${clock(remaining)}，這時回來繼續最省`
+    const message = STRINGS[s.lang].warnToast(clock(remaining))
     $.ui.toast(message, { timeoutMs: 8000 })
     void notify($, message)
   }
 }
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     const saved = (await $.store.get(STORE_KEY)) as Partial<CacheSettings> | undefined
-    if (saved) await update($, settings, () => ({ ...DEFAULTS, ...saved }))
+    if (saved) await update($, settings, () => ({ ...DEFAULTS, ...saved, lang: langOf(saved.lang) ?? DEFAULTS.lang }))
+
+    // The userConfig language applies on first run and whenever it changed since last seen;
+    // otherwise the language picked in the pane or with /cache lang stands.
+    const configLang = langOf(options.lang) ?? DEFAULTS.lang
+    if (saved?.lang === undefined || (await $.store.get(CONFIG_LANG_KEY)) !== configLang) {
+      await saveSettings($, s => ({ ...s, lang: configLang }))
+      await $.store.set(CONFIG_LANG_KEY, configLang)
+    }
 
     await $.command.register({
       name: 'cache',
-      description: 'Prompt cache timer: open the pane, or auto on|off, ttl 5m|1h, band on|off, compact',
-      argumentHint: '[auto on|off] [ttl 5m|1h] [band on|off] [compact]',
+      description: 'Prompt cache timer: open the pane, or auto on|off, ttl 5m|1h, band on|off, lang en|zh-TW, compact',
+      argumentHint: '[auto on|off] [ttl 5m|1h] [band on|off] [lang en|zh-TW] [compact]',
     })
 
     ticker?.cancel()
@@ -279,38 +416,46 @@ export const register: Register = on => {
   on('command.run', { command: 'cache' }, async ($, e) => {
     const words = e.args.trim().toLowerCase().split(/\s+/).filter(Boolean)
     const [verb, value] = words
+    const L = await strings($)
 
     if (verb === undefined) {
-      const { isPlaced } = await $.ui.open({ id: PANE, title: 'Prompt cache' })
+      const { isPlaced } = await $.ui.open({ id: PANE, title: L.paneTitle })
 
-      return { text: isPlaced ? '已開啟快取面板。' : await summary($) }
+      return { text: isPlaced ? L.paneOpened : await summary($) }
     }
 
     if (verb === 'auto' && (value === 'on' || value === 'off')) {
       await saveSettings($, s => ({ ...s, isAutoCompact: value === 'on' }))
 
-      return { text: `到期前自動壓縮：${value === 'on' ? '開' : '關'}` }
+      return { text: L.autoReply(value === 'on' ? L.on : L.off) }
     }
 
     if (verb === 'ttl' && (value === '5m' || value === '1h')) {
       await saveSettings($, s => ({ ...s, ttl: value, ttlSource: 'manual' }))
 
-      return { text: `快取 TTL 設為 ${value}` }
+      return { text: L.ttlReply(value) }
     }
 
     if (verb === 'band' && (value === 'on' || value === 'off')) {
       await saveSettings($, s => ({ ...s, isBandShown: value === 'on' }))
 
-      return { text: `提示框上方進度條：${value === 'on' ? '顯示' : '隱藏'}` }
+      return { text: L.bandReply(value === 'on' ? L.shown : L.hidden) }
+    }
+
+    const lang = langOf(value)
+    if (verb === 'lang' && lang !== undefined) {
+      await saveSettings($, s => ({ ...s, lang }))
+
+      return { text: STRINGS[lang].langReply }
     }
 
     if (verb === 'compact') {
       await compactNow($, 'manual')
 
-      return { text: '已要求壓縮對話。' }
+      return { text: L.compactReply }
     }
 
-    return { text: '用法：/cache [auto on|off] [ttl 5m|1h] [band on|off] [compact]' }
+    return { text: L.usage }
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
@@ -322,6 +467,7 @@ export const register: Register = on => {
     }
 
     const { Box, Text, Button } = $.ui.resolve(e)
+    const L: Strings = STRINGS[s.lang]
     const t = await read($, now)
     const total = ttlMs(s.ttl)
     const remaining = hit.at + total - t
@@ -336,16 +482,16 @@ export const register: Register = on => {
               cache {bar(fraction, width)} {clock(remaining)} / {clock(total)}
             </Text>
           ) : (
-            <Text color="error">快取已過期</Text>
+            <Text color="error">{L.expired}</Text>
           )}
-          <Text dimColor>自動壓縮 {s.isAutoCompact ? '開' : '關'}</Text>
-          <Button key="compact" label="立即壓縮" onPress={() => compactNow($, 'manual')} />
-          <Button key="pane" label="面板" onPress={() => openPane($)} />
-          <Button key="hide" label="隱藏" dimColor onPress={() => saveSettings($, x => ({ ...x, isBandShown: false }))} />
+          <Text dimColor>{L.autoLabel(s.isAutoCompact ? L.on : L.off)}</Text>
+          <Button key="compact" label={L.compactNow} onPress={() => compactNow($, 'manual')} />
+          <Button key="pane" label={L.pane} onPress={() => openPane($)} />
+          <Button key="hide" label={L.hide} dimColor onPress={() => saveSettings($, x => ({ ...x, isBandShown: false }))} />
         </Box>
         <Text dimColor>
-          上次讀寫 {ago(t - hit.at)} · 讀取 {tokens(hit.read)} · 寫入 {tokens(hit.write)}
-          {remaining > 0 ? '' : ` · 下一則訊息會重新寫入約 ${tokens(contextOf(hit))} tokens`}
+          {L.bandLast(ago(L, t - hit.at), tokens(hit.read), tokens(hit.write))}
+          {remaining > 0 ? '' : L.bandRewrite(tokens(contextOf(hit)))}
         </Text>
       </Box>
     )
@@ -356,6 +502,7 @@ export const register: Register = on => {
     const s = await read($, settings)
     const hit = await read($, last)
     const st = await read($, stats)
+    const L: Strings = STRINGS[s.lang]
     const state = await read($, alert)
     const t = await read($, now)
     const total = ttlMs(s.ttl)
@@ -366,17 +513,17 @@ export const register: Register = on => {
 
     const headline =
       hit === null ? (
-        <Text dimColor>{state === 'compacted' ? '已壓縮，下一則訊息會寫入新的快取' : '還沒有快取，送出第一則訊息後開始計時'}</Text>
+        <Text dimColor>{state === 'compacted' ? L.compactedHint : L.noCacheHint}</Text>
       ) : remaining > 0 ? (
         <Box flexDirection="column">
           <Text bold color={tone(fraction)}>
-            剩餘 {clock(remaining)} / {clock(total)}
+            {L.remaining(clock(remaining), clock(total))}
           </Text>
           <Text color={tone(fraction)}>{bar(fraction, width)}</Text>
         </Box>
       ) : (
         <Text bold color="error">
-          快取已過期
+          {L.expired}
         </Text>
       )
 
@@ -386,64 +533,69 @@ export const register: Register = on => {
 
         {hit !== null && (
           <Box flexDirection="column">
-            <Text>上次讀寫：{ago(t - hit.at)}</Text>
-            <Text>
-              這次讀取 {tokens(hit.read)} · 寫入 {tokens(hit.write)} · 未快取 {tokens(hit.uncached)}
-            </Text>
-            <Text dimColor>過期後重新寫入約 {tokens(contextOf(hit))} tokens</Text>
+            <Text>{L.lastLine(ago(L, t - hit.at))}</Text>
+            <Text>{L.tokensLine(tokens(hit.read), tokens(hit.write), tokens(hit.uncached))}</Text>
+            <Text dimColor>{L.rewriteLine(tokens(contextOf(hit)))}</Text>
           </Box>
         )}
 
         <Box flexDirection="column">
-          <Text bold>本 session</Text>
-          <Text>
-            命中率 {hitRate}（{st.hits}/{st.requests} 次請求）· 過期 {st.expiries} 次 · 壓縮 {st.compactions} 次
-          </Text>
-          {st.history.length > 0 && <Text dimColor>每次請求的快取比例：{spark(st.history)}</Text>}
+          <Text bold>{L.thisSession}</Text>
+          <Text>{L.statsLine(hitRate, st.hits, st.requests, st.expiries, st.compactions)}</Text>
+          {st.history.length > 0 && <Text dimColor>{L.historyLine(spark(st.history))}</Text>}
         </Box>
 
         <Box flexDirection="column" gap={1}>
-          <Text bold>設定</Text>
+          <Text bold>{L.settings}</Text>
           <Box flexDirection="row" gap={1}>
-            <Text>TTL（{SOURCE_LABEL[s.ttlSource]}）</Text>
+            <Text>{L.ttlLabel(L.source[s.ttlSource])}</Text>
             <Button key="ttl-5m" label="5m" variant={s.ttl === '5m' ? 'primary' : 'secondary'} onPress={() => saveSettings($, x => ({ ...x, ttl: '5m', ttlSource: 'manual' }))} />
             <Button key="ttl-1h" label="1h" variant={s.ttl === '1h' ? 'primary' : 'secondary'} onPress={() => saveSettings($, x => ({ ...x, ttl: '1h', ttlSource: 'manual' }))} />
           </Box>
           <Box flexDirection="row" gap={1}>
-            <Text>到期前自動壓縮</Text>
+            <Text>{L.autoCompact}</Text>
             <Button
               key="auto"
-              label={s.isAutoCompact ? '開' : '關'}
+              label={s.isAutoCompact ? L.on : L.off}
               variant={s.isAutoCompact ? 'primary' : 'secondary'}
               onPress={() => saveSettings($, x => ({ ...x, isAutoCompact: !x.isAutoCompact }))}
             />
           </Box>
           <Box flexDirection="row" gap={1}>
-            <Text>提前</Text>
+            <Text>{L.lead}</Text>
             {[60, 120, 300].map(sec => (
               <Button
                 key={`lead-${sec}`}
-                label={`${sec / 60} 分`}
+                label={L.minutes(sec / 60)}
                 variant={s.leadSeconds === sec ? 'primary' : 'secondary'}
                 onPress={() => saveSettings($, x => ({ ...x, leadSeconds: sec }))}
               />
             ))}
           </Box>
-          <Text dimColor>
-            實際在剩 {Math.round(leadMs(s) / 1000)} 秒時壓縮（5m TTL 最多提前 1 分鐘）；上下文不到 {tokens(MIN_COMPACT_TOKENS)} tokens 時不自動壓縮。
-          </Text>
+          <Text dimColor>{L.leadNote(Math.round(leadMs(s) / 1000), tokens(MIN_COMPACT_TOKENS))}</Text>
           <Box flexDirection="row" gap={1}>
-            <Text>提示框上方進度條</Text>
+            <Text>{L.band}</Text>
             <Button
               key="band"
-              label={s.isBandShown ? '顯示' : '隱藏'}
+              label={s.isBandShown ? L.shown : L.hidden}
               variant={s.isBandShown ? 'primary' : 'secondary'}
               onPress={() => saveSettings($, x => ({ ...x, isBandShown: !x.isBandShown }))}
             />
           </Box>
+          <Box flexDirection="row" gap={1}>
+            <Text>{L.language}</Text>
+            {LANGS.map(lang => (
+              <Button
+                key={`lang-${lang}`}
+                label={LANG_LABEL[lang]}
+                variant={s.lang === lang ? 'primary' : 'secondary'}
+                onPress={() => saveSettings($, x => ({ ...x, lang }))}
+              />
+            ))}
+          </Box>
         </Box>
 
-        <Button key="compact-now" label="立即壓縮對話" onPress={() => compactNow($, 'manual')} />
+        <Button key="compact-now" label={L.compactConversation} onPress={() => compactNow($, 'manual')} />
       </Box>
     )
   })
