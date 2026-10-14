@@ -1,0 +1,15 @@
+{
+  "name": "claude-cache-timer",
+  "owner": {
+    "name": "mileschintw"
+  },
+  "metadata": {
+    "description": "Prompt cache TTL countdown mod for Claude Code"
+  },
+  "plugins": [
+    {
+      "name": "cache-timer",
+      "source": "./"
+    }
+  ]
+}
