@@ -461,11 +461,19 @@ const shownAt = (s: CacheSettings, hit: CacheHit, t: number) => {
 
 /** The status line's text as last set; undefined while it is clear. */
 let shownStatus: string | undefined
+/** When the status line was last set. */
+let statusSentAt = 0
+/**
+ * How often an unchanged status line is set again. After an app restart the
+ * first one can come before the surface is ready to draw it.
+ */
+const STATUS_RESEND_MS = 15_000
 
 /**
  * Keeps the countdown in the status line, which stays visible where the host
- * hides the band (under the desktop app's dialogs and cards). Sets it only when
- * its text changes, and clears it while no cache is timed or it is turned off.
+ * hides the band (under the desktop app's dialogs and cards). Sets it when its
+ * text changes, and again every 15 seconds while it shows; clears it while no
+ * cache is timed or it is turned off.
  */
 async function showStatus($: EngineInterface) {
   const hit = await read($, last)
@@ -476,9 +484,11 @@ async function showStatus($: EngineInterface) {
     const remaining = hit.at + ttlMs(s.ttl) - (await $.clock.now())
     text = remaining > 0 ? L.remainingHead(countdown(s.lang, remaining, ttlMs(s.ttl), s.isSecondsShown)) : L.expired
   }
-  if (text === shownStatus) return
+  const t = await $.clock.now()
+  if (text === shownStatus && (text === undefined || t - statusSentAt < STATUS_RESEND_MS)) return
 
   shownStatus = text
+  statusSentAt = t
   $.ui.status(text)
 }
 

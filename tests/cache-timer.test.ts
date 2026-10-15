@@ -733,6 +733,18 @@ test('after a restart the status line shows the saved hit right away', async ($,
   expect(w.statuses.at(-1)).toBe('Cache has 50 / 60 min left')
 })
 
+test('an unchanged status line is set again every 15 seconds, in case the first came too early', async ($, on) => {
+  const w = world(on, undefined, savedSession(1_000_000 - 70 * MIN))
+  await start($)
+  expect(w.statuses).toEqual(['Cache expired'])
+
+  await w.clock.advance(14_000)
+  expect(w.statuses).toEqual(['Cache expired'])
+
+  await w.clock.advance(1000)
+  expect(w.statuses).toEqual(['Cache expired', 'Cache expired'])
+})
+
 test('a hit that expired while the app was closed shows as expired, with no toast', async ($, on) => {
   const w = world(on, undefined, savedSession(1_000_000 - 70 * MIN))
   await start($)
