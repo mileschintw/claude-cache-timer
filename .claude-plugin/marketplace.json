@@ -10,8 +10,8 @@
     {
       "name": "cache-timer",
       "source": {
-        "source": "github",
-        "repo": "mileschintw/claude-cache-timer",
+        "source": "url",
+        "url": "https://github.com/mileschintw/claude-cache-timer.git",
         "ref": "cache-timer--v0.4.2",
         "sha": "0457b38d02c61b8c3e82f687b68b57cc51d88365"
       }

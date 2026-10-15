@@ -97,7 +97,7 @@ jobs:
           sha=$(git rev-parse HEAD)
 
           jq --arg repo "$GITHUB_REPOSITORY" --arg tag "$TAG" --arg sha "$sha" \
-            '.plugins |= map(if .name == "cache-timer" then .source = {source: "github", repo: $repo, ref: $tag, sha: $sha} else . end)' \
+            '.plugins |= map(if .name == "cache-timer" then .source = {source: "url", url: "https://github.com/\($repo).git", ref: $tag, sha: $sha} else . end)' \
             .claude-plugin/marketplace.json >marketplace.json.tmp
           mv marketplace.json.tmp .claude-plugin/marketplace.json
           git commit -am "Pin the marketplace to cache-timer $VERSION"
