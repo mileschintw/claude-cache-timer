@@ -24,7 +24,7 @@ For a type check, load the mod in Claude Code once. That writes types and a tsco
 
 ## Releases
 
-The marketplace entry in `.claude-plugin/marketplace.json` is pinned to a release tag, so users get only releases, not every commit on `main`.
+The marketplace entry in `.claude-plugin/marketplace.json` is pinned to a release tag, so users get only releases, not every commit on `main`. The entry uses a `url` source with the HTTPS clone URL, not a `github` source: Claude Code clones a `github` source over SSH, which fails on machines without a GitHub host key or SSH key.
 
 Every version is a release, and only a release changes the version. A commit asks for one with a trailer at the end of its message, before `Co-Authored-By`:
 
