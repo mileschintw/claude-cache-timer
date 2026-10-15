@@ -7,9 +7,7 @@
 
 **A prompt cache countdown and auto-compact for Claude Code. See how long your cache stays warm, and compact before it expires instead of paying to re-cache a long context.**
 
-```
-cache █████░░░░░ 28 min · auto-compact off [ Compact ] [ Pane ] ✕
-```
+![The cache-timer band above the prompt in the Claude desktop app, with the status line countdown below](docs/images/band-desktop.png)
 
 Works in the Claude Code terminal and in the Claude desktop app's Code tab. English and Traditional Chinese interface.
 
@@ -19,7 +17,11 @@ Works in the Claude Code terminal and in the Claude desktop app's Code tab. Engl
 
 - **In the status line, always.** `cache ████░░░░ 27 min left`, on by default, with no setup.
 - **One row above the prompt, if you want it.** The bar goes from green to yellow to red as the cache runs down. Next to it: the time left, whether auto-compact is on, and a Compact button. When the window narrows, the row drops its less important parts and never wraps.
-- **Native in the desktop app.** The desktop app draws the bar as a smooth rounded SVG bar; the terminal uses block characters.
+- **Native in the desktop app.** The desktop app draws the bar as a smooth rounded SVG bar; the terminal uses block characters:
+
+  ```
+  cache █████░░░░░ 28 min · auto-compact off [ Compact ] [ Pane ] ✕
+  ```
 
 ### Built-in auto-compact
 
@@ -72,6 +74,8 @@ Every session started after that loads the mod.
 - **Status line countdown.** Whole minutes until the last 5 minutes, then `mm:ss`, or `Cache expired`. On by default.
 - **Band above the prompt.** Off by default; turn it on with `/cache band on`. After the cache expires, it says how many tokens the next message re-writes.
 - **`/cache` pane.** The time left and a Compact button, the last read and write sizes, this session's hit rate, expiries and compactions, and a sparkline of how much of each request the cache served. It also holds the settings, each a row of buttons with the current value highlighted.
+
+  <img src="docs/images/pane-desktop.png" alt="The /cache pane: time left, last read and write, session stats and settings" width="320">
 - **Expiry reminders.** A toast 5 minutes before a 1h cache expires (1 minute before a 5m one), and another when it has expired.
 - **Auto-compact.** Off by default. Compacts 1, 2 or 5 minutes before expiry, while the cache is still warm.
 - **One-click compact.** From the band or the pane. The button reads `Compacting…` until the compaction ends, and the band then says the next message writes a fresh cache.
