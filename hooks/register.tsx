@@ -161,6 +161,7 @@ export const STRINGS = {
     paneOpened: 'Opened the cache pane.',
     autoReply: (onOff: string) => `Auto-compact before expiry: ${onOff}`,
     autoFrom: (min: string) => `from ${min} tokens`,
+    autoOption: (min: string) => `from ${min}`,
     ttlReply: (ttl: string) => `Cache TTL set to ${ttl}`,
     bandReply: (shown: string) => `Band above the prompt: ${shown}`,
     statusReply: (mode: string) => `Status line: ${mode}`,
@@ -223,6 +224,7 @@ export const STRINGS = {
     paneOpened: '已開啟快取面板。',
     autoReply: (onOff: string) => `到期前自動壓縮：${onOff}`,
     autoFrom: (min: string) => `${min} tokens 起`,
+    autoOption: (min: string) => `${min} 起`,
     ttlReply: (ttl: string) => `快取 TTL 設為 ${ttl}`,
     bandReply: (shown: string) => `提示框上方進度條：${shown}`,
     statusReply: (mode: string) => `狀態列：${mode}`,
@@ -1002,7 +1004,7 @@ export const register: Register = (on, options) => {
     ]
     const statusModes = STATUS_MODES.map(value => ({ value, label: L.statusModes[value] }))
     // Auto-compact is off, or on from one of the context sizes.
-    const autoOptions = [{ value: 'off', label: L.off }, ...COMPACT_THRESHOLDS.map(n => ({ value: String(n), label: tokens(n) }))]
+    const autoOptions = [{ value: 'off', label: L.off }, ...COMPACT_THRESHOLDS.map(n => ({ value: String(n), label: L.autoOption(tokens(n)) }))]
     const autoValue = s.isAutoCompact ? String(s.compactMinTokens) : 'off'
     const pickAuto = (v: string) =>
       saveSettings($, x => (v === 'off' ? { ...x, isAutoCompact: false } : { ...x, isAutoCompact: true, compactMinTokens: Number(v) }))
