@@ -182,7 +182,7 @@ export const STRINGS = {
     noCacheHint: 'No cache yet; the timer starts after your first message',
     remaining: (c: string) => `${c} left`,
     lastLine: (ago: string) => `Last read/write: ${ago}`,
-    tokensLine: (r: string, w: string, u: string) => `This request read ${r} · wrote ${w} · uncached ${u}`,
+    tokensLine: (r: string, w: string) => `This request read ${r} · wrote ${w}`,
     estimatedLine: (tok: string) => `Restored after a restart: about ${tok} tokens of context; read and write unknown`,
     rewriteLine: (tok: string) => `After expiry, about ${tok} tokens are re-written`,
     settings: 'Settings',
@@ -245,7 +245,7 @@ export const STRINGS = {
     noCacheHint: '還沒有快取，送出第一則訊息後開始計時',
     remaining: (c: string) => `剩餘 ${c}`,
     lastLine: (ago: string) => `上次讀寫：${ago}`,
-    tokensLine: (r: string, w: string, u: string) => `這次讀取 ${r} · 寫入 ${w} · 未快取 ${u}`,
+    tokensLine: (r: string, w: string) => `這次讀取 ${r} · 寫入 ${w}`,
     estimatedLine: (tok: string) => `重開後還原：上下文約 ${tok} tokens，讀寫各多少不明`,
     rewriteLine: (tok: string) => `過期後重新寫入約 ${tok} tokens`,
     settings: '設定',
@@ -1051,7 +1051,7 @@ export const register: Register = (on, options) => {
             <Text>
               {hit.isEstimated
                 ? L.estimatedLine(tokens(contextOf(hit)))
-                : L.tokensLine(tokens(hit.read), tokens(hit.write), tokens(hit.uncached))}
+                : L.tokensLine(tokens(hit.read), tokens(hit.write))}
             </Text>
             <Text dimColor>{L.rewriteLine(tokens(contextOf(hit)))}</Text>
           </Box>

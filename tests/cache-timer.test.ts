@@ -815,7 +815,7 @@ test('after a restart the band and pane show the saved hit right away', async ($
   }
   const p = await pane($)
   expect(await p.find({ type: 'Text', text: /^50 min left$/ })).toBeDefined()
-  expect(await p.find({ type: 'Text', text: /read 150k · wrote 2k/ })).toBeDefined()
+  expect(await p.find({ type: 'Text', text: /^This request read 150k · wrote 2k$/ })).toBeDefined()
   expect(w.toasts).toHaveLength(0)
 })
 
