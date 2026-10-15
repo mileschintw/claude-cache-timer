@@ -17,8 +17,8 @@ export type CacheSettings = {
   status: CacheStatusMode
   /** Show `mm:ss` the whole time, not whole minutes until 5 minutes are left. */
   isSecondsShown: boolean
-  /** Where the TTL came from: the default, a response that proved it, a model switch, or the person. */
-  ttlSource: 'default' | 'observed' | 'switch' | 'manual'
+  /** Where the TTL came from: the default, a response that proved it, a model switch, or the person, who fixes it. */
+  ttlSource: 'default' | 'observed' | 'switch' | 'fixed'
   /** UI language. */
   lang: CacheLang
   /** The pane's settings are unfolded. */

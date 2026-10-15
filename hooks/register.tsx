@@ -118,6 +118,15 @@ export const langOf = (value: unknown): CacheLang | undefined =>
 export const compactThresholdOf = (value: unknown): number | undefined =>
   COMPACT_THRESHOLDS.find(n => value === tokens(n) || value === String(n))
 
+/** The lead choices, in seconds; `/cache ahead` takes them as `1m`, `2m`, `5m`. */
+export const AHEAD_SECONDS = [60, 120, 300] as const
+
+type TtlChoice = 'auto' | CacheTtl
+
+/** A TTL the person picked: `auto` goes back to detection from the TTL in use, the others fix it. */
+const pickTtl = (s: CacheSettings, v: TtlChoice): CacheSettings =>
+  v === 'auto' ? { ...s, ttlSource: s.ttlSource === 'fixed' ? 'default' : s.ttlSource } : { ...s, ttl: v, ttlSource: 'fixed' }
+
 export const STATUS_MODES = ['off', 'time', 'bar'] as const satisfies readonly CacheStatusMode[]
 
 /** The status mode for a typed value; `on`, from before there were three, means the bar. */
@@ -126,13 +135,16 @@ export const statusModeOf = (value: unknown): CacheStatusMode | undefined =>
 
 /**
  * Settings as saved, filled in from the defaults. Settings saved before the
- * status line had three modes carry `isStatusShown` instead of `status`.
+ * status line had three modes carry `isStatusShown` instead of `status`, and
+ * before a TTL could be fixed, a picked one has the source `manual`.
  */
 export const settingsOf = (saved: Partial<CacheSettings> & { isStatusShown?: unknown }): CacheSettings => {
   const { isStatusShown, ...rest } = saved
   const status = statusModeOf(rest.status) ?? (isStatusShown === false ? 'off' : DEFAULTS.status)
+  // A TTL picked before `auto` existed never held off detection, so it stays detected.
+  const ttlSource = (rest.ttlSource as string) === 'manual' ? 'default' : (rest.ttlSource ?? DEFAULTS.ttlSource)
 
-  return { ...DEFAULTS, ...rest, status, lang: langOf(rest.lang) ?? DEFAULTS.lang }
+  return { ...DEFAULTS, ...rest, status, ttlSource, lang: langOf(rest.lang) ?? DEFAULTS.lang }
 }
 
 /** Every UI string, keyed by language. */
@@ -140,7 +152,7 @@ export const STRINGS = {
   en: {
     notifyTitle: 'Cache timer',
     bandPrefix: 'cache',
-    commandDescription: 'Prompt cache timer: open the pane, or auto off|50k|100k|200k|500k, ttl 5m|1h, band on|off, status off|time|bar, seconds on|off, lang en|zh-TW',
+    commandDescription: 'Prompt cache timer: open the pane, or auto off|50k|100k|200k|500k, ahead 1m|2m|5m, ttl auto|5m|1h, band on|off, status off|time|bar, seconds on|off, lang en|zh-TW',
     paneTitle: 'Prompt cache',
     on: 'on',
     off: 'off',
@@ -148,7 +160,7 @@ export const STRINGS = {
     hidden: 'hidden',
     lessThanMinuteAgo: 'under a minute ago',
     minutesAgo: (m: number) => `${m} min ago`,
-    source: { default: 'default', observed: 'detected', switch: 'from model switch', manual: 'set by you' },
+    source: { default: 'default', observed: 'detected', switch: 'from model switch', fixed: 'set by you' },
     noTimer: 'No cache is being timed',
     remainingHead: (c: string) => `Cache has ${c} left`,
     expired: 'Cache expired',
@@ -164,13 +176,16 @@ export const STRINGS = {
     autoFrom: (min: string) => `from ${min} tokens`,
     autoOption: (min: string) => `from ${min}`,
     ttlReply: (ttl: string) => `Cache TTL set to ${ttl}`,
+    ttlAutoReply: (ttl: string) => `Cache TTL detected automatically (now ${ttl})`,
+    ttlAuto: (ttl: string) => `auto (${ttl})`,
+    aheadReply: (min: string) => `Compact ahead by: ${min}`,
     bandReply: (shown: string) => `Band above the prompt: ${shown}`,
     statusReply: (mode: string) => `Status line: ${mode}`,
     secondsReply: (onOff: string) => `Always show seconds: ${onOff}`,
     langReply: 'Language set to English',
     compactFailed: (why: string) => `Compaction failed: ${why}`,
     alreadyCompacting: 'Already compacting the conversation',
-    usage: 'Usage: /cache [auto off|50k|100k|200k|500k] [ttl 5m|1h] [band on|off] [status off|time|bar] [seconds on|off] [lang en|zh-TW]',
+    usage: 'Usage: /cache [auto off|50k|100k|200k|500k] [ahead 1m|2m|5m] [ttl auto|5m|1h] [band on|off] [status off|time|bar] [seconds on|off] [lang en|zh-TW]',
     autoBand: (lead: string) => `auto-compacts ${lead} before expiry`,
     compactNow: 'Compact',
     pane: 'Pane',
@@ -189,7 +204,7 @@ export const STRINGS = {
     settings: 'Settings',
     ttlLabel: (source: string) => `TTL (${source})`,
     autoCompact: 'Auto-compact before expiry',
-    lead: 'Lead',
+    lead: 'Compact ahead by',
     minutes: (m: number) => `${m} min`,
     leadNote: (sec: number, min: string) =>
       `Compacts with ${sec}s left (at most 1 minute ahead on a 5m TTL); never auto-compacts under ${min} tokens of context.`,
@@ -203,7 +218,7 @@ export const STRINGS = {
   'zh-TW': {
     notifyTitle: '快取計時器',
     bandPrefix: 'cache',
-    commandDescription: 'Prompt 快取計時器：開啟面板，或 auto off|50k|100k|200k|500k、ttl 5m|1h、band on|off、status off|time|bar、seconds on|off、lang en|zh-TW',
+    commandDescription: 'Prompt 快取計時器：開啟面板，或 auto off|50k|100k|200k|500k、ahead 1m|2m|5m、ttl auto|5m|1h、band on|off、status off|time|bar、seconds on|off、lang en|zh-TW',
     paneTitle: 'Prompt 快取',
     on: '開',
     off: '關',
@@ -211,7 +226,7 @@ export const STRINGS = {
     hidden: '隱藏',
     lessThanMinuteAgo: '不到 1 分鐘前',
     minutesAgo: (m: number) => `${m} 分鐘前`,
-    source: { default: '預設', observed: '自動偵測', switch: '切換模型時回報', manual: '手動設定' },
+    source: { default: '預設', observed: '自動偵測', switch: '切換模型時回報', fixed: '手動設定' },
     noTimer: '目前沒有在計時的快取',
     remainingHead: (c: string) => `快取剩 ${c}`,
     expired: '快取已過期',
@@ -227,13 +242,16 @@ export const STRINGS = {
     autoFrom: (min: string) => `${min} tokens 起`,
     autoOption: (min: string) => `${min} 起`,
     ttlReply: (ttl: string) => `快取 TTL 設為 ${ttl}`,
+    ttlAutoReply: (ttl: string) => `快取 TTL 改為自動偵測（目前 ${ttl}）`,
+    ttlAuto: (ttl: string) => `自動（${ttl}）`,
+    aheadReply: (min: string) => `提前壓縮：${min}`,
     bandReply: (shown: string) => `提示框上方進度條：${shown}`,
     statusReply: (mode: string) => `狀態列：${mode}`,
     secondsReply: (onOff: string) => `永遠顯示秒數：${onOff}`,
     langReply: '介面語言已設為繁體中文',
     compactFailed: (why: string) => `壓縮失敗：${why}`,
     alreadyCompacting: '正在壓縮對話',
-    usage: '用法：/cache [auto off|50k|100k|200k|500k] [ttl 5m|1h] [band on|off] [status off|time|bar] [seconds on|off] [lang en|zh-TW]',
+    usage: '用法：/cache [auto off|50k|100k|200k|500k] [ahead 1m|2m|5m] [ttl auto|5m|1h] [band on|off] [status off|time|bar] [seconds on|off] [lang en|zh-TW]',
     autoBand: (lead: string) => `到期前 ${lead}自動壓縮`,
     compactNow: '立即壓縮',
     pane: '面板',
@@ -252,7 +270,7 @@ export const STRINGS = {
     settings: '設定',
     ttlLabel: (source: string) => `TTL（${source}）`,
     autoCompact: '到期前自動壓縮',
-    lead: '提前',
+    lead: '提前壓縮',
     minutes: (m: number) => `${m} 分鐘`,
     leadNote: (sec: number, min: string) =>
       `實際在剩 ${sec} 秒時壓縮（5m TTL 最多提前 1 分鐘）；上下文不到 ${min} tokens 時不自動壓縮。`,
@@ -735,7 +753,7 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: 'cache',
       description: (await strings($)).commandDescription,
-      argumentHint: '[auto off|50k|100k|200k|500k] [ttl 5m|1h] [band on|off] [status off|time|bar] [seconds on|off] [lang en|zh-TW]',
+      argumentHint: '[auto off|50k|100k|200k|500k] [ahead 1m|2m|5m] [ttl auto|5m|1h] [band on|off] [status off|time|bar] [seconds on|off] [lang en|zh-TW]',
     })
 
     // A pane can outlive a reload of the module; the engine's list says whether it is up.
@@ -765,7 +783,7 @@ export const register: Register = (on, options) => {
       const prev = await read($, last)
       const s = await read($, settings)
       const seen = prev === null ? undefined : observedTtl(t - prev.at, read_, write)
-      if (seen !== undefined && (seen !== s.ttl || s.ttlSource !== 'observed')) {
+      if (seen !== undefined && s.ttlSource !== 'fixed' && (seen !== s.ttl || s.ttlSource !== 'observed')) {
         await saveSettings($, x => ({ ...x, ttl: seen, ttlSource: 'observed' }))
       }
 
@@ -831,7 +849,7 @@ export const register: Register = (on, options) => {
   // A model switch reports the TTL the session's cache uses.
   on('classic.PostModelSwitch', async ($, e, next) => {
     const ttl = e.cache_ttl
-    if (ttl === '5m' || ttl === '1h') await saveSettings($, s => ({ ...s, ttl, ttlSource: 'switch' }))
+    if (ttl === '5m' || ttl === '1h') await saveSettings($, s => (s.ttlSource === 'fixed' ? s : { ...s, ttl, ttlSource: 'switch' }))
 
     return next(e)
   })
@@ -854,10 +872,17 @@ export const register: Register = (on, options) => {
       return { text: L.autoReply(autoState(L, saved)) }
     }
 
-    if (verb === 'ttl' && (value === '5m' || value === '1h')) {
-      await saveSettings($, s => ({ ...s, ttl: value, ttlSource: 'manual' }))
+    if (verb === 'ttl' && (value === 'auto' || value === '5m' || value === '1h')) {
+      const saved = await saveSettings($, s => pickTtl(s, value))
 
-      return { text: L.ttlReply(value) }
+      return { text: value === 'auto' ? L.ttlAutoReply(saved.ttl) : L.ttlReply(value) }
+    }
+
+    const ahead = AHEAD_SECONDS.find(sec => value === `${sec / 60}m`)
+    if (verb === 'ahead' && ahead !== undefined) {
+      await saveSettings($, s => ({ ...s, leadSeconds: ahead }))
+
+      return { text: L.aheadReply(L.minutes(ahead / 60)) }
     }
 
     if (verb === 'band' && (value === 'on' || value === 'off')) {
@@ -1067,8 +1092,13 @@ export const register: Register = (on, options) => {
           />
           {s.isSettingsOpen && (
             <Box flexDirection="column" gap={1}>
-              {settingRow(els, 'ttl', L.ttlLabel(L.source[s.ttlSource]), [{ value: '5m', label: '5m' }, { value: '1h', label: '1h' }], s.ttl, ttl =>
-                saveSettings($, x => ({ ...x, ttl, ttlSource: 'manual' })),
+              {settingRow(
+                els,
+                'ttl',
+                L.ttlLabel(L.source[s.ttlSource]),
+                [{ value: 'auto', label: L.ttlAuto(s.ttl) }, { value: '5m', label: '5m' }, { value: '1h', label: '1h' }] as const,
+                s.ttlSource === 'fixed' ? s.ttl : 'auto',
+                (v: TtlChoice) => saveSettings($, x => pickTtl(x, v)),
               )}
               {Select !== undefined ? (
                 // Our own label, not the Select's: the desktop app dims that one.
@@ -1084,7 +1114,7 @@ export const register: Register = (on, options) => {
                   els,
                   'lead',
                   L.lead,
-                  [60, 120, 300].map(sec => ({ value: sec, label: L.minutes(sec / 60) })),
+                  AHEAD_SECONDS.map(sec => ({ value: sec, label: L.minutes(sec / 60) })),
                   s.leadSeconds,
                   v => saveSettings($, x => ({ ...x, leadSeconds: v })),
                 )}

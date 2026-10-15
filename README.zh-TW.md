@@ -79,7 +79,7 @@ git clone https://github.com/mileschintw/claude-cache-timer.git ~/.claude/mods/c
 - **到期提醒**：1h 快取在過期前 5 分鐘提醒（5m 快取是前 1 分鐘），過期時再提醒一次。
 - **自動壓縮**：預設關閉。從下拉選單選「關」或上下文門檻；在過期前 1、2 或 5 分鐘、快取還有效時壓縮對話。
 - **一鍵壓縮**：在進度條或面板按按鈕。壓縮進行中按鈕會顯示「壓縮中…」，完成後進度條會提示下一則訊息會寫入新的快取。
-- **TTL 自動偵測**：一開始假設是 1h，再依 API 回報的實際情況自動修正。隔了 5 分鐘以上還能讀到快取，代表是 1h；隔 5 到 55 分鐘後必須整段重寫，代表是 5m。切換模型時，Claude Code 也會直接回報 TTL。
+- **TTL 自動偵測**：一開始假設是 1h，再依 API 回報的實際情況自動修正。隔了 5 分鐘以上還能讀到快取，代表是 1h；隔 5 到 55 分鐘後必須整段重寫，代表是 5m。切換模型時，Claude Code 也會直接回報 TTL。自動偵測就是「自動」這個選項；選 5m 或 1h 則會固定 TTL。
 - **重開不中斷**：重開 app 或恢復 session 後，倒數會馬上接續。
 - **英文或繁體中文介面**：見[介面語言](#介面語言)。
 
@@ -91,7 +91,8 @@ git clone https://github.com/mileschintw/claude-cache-timer.git ~/.claude/mods/c
 | --- | --- |
 | `/cache` | 開啟面板；無法顯示面板時，直接列出相同的數據 |
 | `/cache auto 50k\|100k\|200k\|500k\|off` | 從該上下文大小起開啟自動壓縮，或關閉（`on` 沿用目前的門檻） |
-| `/cache ttl 5m` / `1h` | 手動設定 TTL |
+| `/cache ahead 1m\|2m\|5m` | 自動壓縮在到期前多久執行 |
+| `/cache ttl auto\|5m\|1h` | 自動偵測 TTL，或固定為 5m 或 1h |
 | `/cache status bar` / `time` / `off` | 狀態列顯示進度條和剩餘時間（預設）、只顯示時間，或不顯示 |
 | `/cache band on` / `off` | 顯示或隱藏提示框上方的進度條（預設開） |
 | `/cache seconds on` / `off` | 一律顯示 `mm:ss`，不在剩 5 分鐘前只顯示分鐘（預設關） |

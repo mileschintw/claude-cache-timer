@@ -33,5 +33,5 @@ The least context, in tokens, that auto-compact acts on: 50k, 100k, 200k or 500k
 _Avoid_: minimum, floor
 
 **Lead**:
-How long before expiry auto-compact starts.
+How long before expiry auto-compact starts. The pane and `/cache ahead` call it "Compact ahead by" (提前壓縮), since "lead" alone reads as several other things.
 _Avoid_: offset, margin

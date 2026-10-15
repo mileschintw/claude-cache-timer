@@ -79,7 +79,7 @@ Every session started after that loads the mod.
 - **Expiry reminders.** A toast 5 minutes before a 1h cache expires (1 minute before a 5m one), and another when it has expired.
 - **Auto-compact.** Off by default. Pick off or a context threshold from a dropdown; compacts 1, 2 or 5 minutes before expiry, while the cache is still warm.
 - **One-click compact.** From the band or the pane. The button reads `Compacting…` until the compaction ends, and the band then says the next message writes a fresh cache.
-- **Automatic TTL detection.** The TTL starts at 1h and corrects itself from what the API reports. A cache read after more than 5 minutes proves 1h. A full re-write after 5 to 55 minutes proves 5m. A model switch also reports the TTL directly.
+- **Automatic TTL detection.** The TTL starts at 1h and corrects itself from what the API reports. A cache read after more than 5 minutes proves 1h. A full re-write after 5 to 55 minutes proves 5m. A model switch also reports the TTL directly. Detection is the **auto** setting; pick 5m or 1h to fix the TTL instead.
 - **Survives restarts.** Reopening the app or resuming a session picks the countdown up right away.
 - **English or Traditional Chinese.** See [Language](#language).
 
@@ -91,7 +91,8 @@ The countdown appears in the status line after your first message. Everything el
 | --- | --- |
 | `/cache` | Open the pane. Where no pane can be placed, prints the same figures. |
 | `/cache auto 50k\|100k\|200k\|500k\|off` | Turn auto-compact on from that context size, or off (`on` keeps the current size) |
-| `/cache ttl 5m` / `1h` | Set the TTL by hand |
+| `/cache ahead 1m\|2m\|5m` | How long before expiry auto-compact runs |
+| `/cache ttl auto\|5m\|1h` | Detect the TTL, or fix it at 5m or 1h |
 | `/cache status bar` / `time` / `off` | Show a bar and the time left in the status line (the default), the time alone, or nothing |
 | `/cache band on` / `off` | Show or hide the band above the prompt (on by default) |
 | `/cache seconds on` / `off` | Show `mm:ss` the whole time instead of whole minutes until the last 5 minutes (off by default) |

@@ -231,7 +231,7 @@ test('/cache seconds and the pane button switch to mm:ss the whole time', async 
 })
 
 test('always-show-seconds saved in an earlier session still applies', async ($, on) => {
-  world(on, { ttl: '1h', isAutoCompact: false, leadSeconds: 120, isBandShown: true, isSecondsShown: true, ttlSource: 'manual', lang: 'en' }, { configLang: 'en' })
+  world(on, { ttl: '1h', isAutoCompact: false, leadSeconds: 120, isBandShown: true, isSecondsShown: true, ttlSource: 'fixed', lang: 'en' }, { configLang: 'en' })
   await start($)
   await step($)
 
@@ -473,7 +473,7 @@ test('the band compact button compacts and clears the timer', async ($, on) => {
 })
 
 test('a 5m cache never auto-compacts within 4 minutes, whatever the lead', async ($, on) => {
-  const w = world(on, { ttl: '5m', isAutoCompact: true, leadSeconds: 300, isBandShown: true, ttlSource: 'manual' })
+  const w = world(on, { ttl: '5m', isAutoCompact: true, leadSeconds: 300, isBandShown: true, ttlSource: 'fixed' })
   await start($)
   await step($)
 
@@ -494,6 +494,43 @@ test('a read after a 10 minute gap proves a 1h TTL', async ($, on) => {
   const ui = await pane($)
   expect(await ui.find({ type: 'Text', text: /TTL \(detected\)/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^60 min left$/ })).toBeDefined()
+})
+
+test('a fixed TTL holds against what the API proves, and auto lets detection back in', async ($, on) => {
+  const w = world(on, { ttl: '5m', isBandShown: true, ttlSource: 'fixed' })
+  await start($)
+  await step($)
+  await w.clock.advance(10 * MIN)
+  await step($)
+  const p = await pane($)
+  expect(await p.find({ type: 'Text', text: /^05:00 left$/ })).toBeDefined()
+
+  expect((await cache($, 'ttl auto')).text).toBe('Cache TTL detected automatically (now 5m)')
+  await w.clock.advance(10 * MIN)
+  await step($)
+  expect(await p.find({ type: 'Text', text: /^60 min left$/ })).toBeDefined()
+  expect((await cache($, 'ttl 5m')).text).toBe('Cache TTL set to 5m')
+})
+
+test('a TTL picked before it could be fixed stays detected', async ($, on) => {
+  const w = world(on, { ttl: '5m', isBandShown: true, ttlSource: 'manual' })
+  await start($)
+  await step($)
+  await w.clock.advance(10 * MIN)
+  await step($)
+
+  expect(await (await pane($)).find({ type: 'Text', text: /^60 min left$/ })).toBeDefined()
+})
+
+test('/cache ahead sets how long before expiry auto-compact runs', async ($, on) => {
+  world(on, { isBandShown: true, isAutoCompact: true })
+  await start($)
+  await step($)
+
+  expect((await cache($, 'ahead 5m')).text).toBe('Compact ahead by: 5 min')
+  expect((await (await pane($)).find({ key: 'lead-300' }))?.props.variant).toBe('primary')
+  expect(await (await band($, 'terminal')).find({ type: 'Text', text: /auto-compacts 5 min before expiry/ })).toBeDefined()
+  expect((await cache($, 'ahead 3m')).text).toContain('Usage: /cache')
 })
 
 test('a write with no read after a 10 minute gap proves a 5m TTL', async ($, on) => {
@@ -552,7 +589,7 @@ test('lang zh-TW in userConfig reminds in Traditional Chinese', { options: { lan
 })
 
 test('a language picked earlier stands while userConfig is unchanged', async ($, on) => {
-  world(on, { ttl: '1h', isAutoCompact: false, leadSeconds: 120, isBandShown: true, ttlSource: 'manual', lang: 'zh-TW' }, { configLang: 'en' })
+  world(on, { ttl: '1h', isAutoCompact: false, leadSeconds: 120, isBandShown: true, ttlSource: 'fixed', lang: 'zh-TW' }, { configLang: 'en' })
   await start($)
 
   const ui = await pane($)
@@ -560,7 +597,7 @@ test('a language picked earlier stands while userConfig is unchanged', async ($,
 })
 
 test('a userConfig change replaces the language picked earlier', { options: { lang: 'en' } }, async ($, on) => {
-  world(on, { ttl: '1h', isAutoCompact: false, leadSeconds: 120, isBandShown: true, ttlSource: 'manual', lang: 'zh-TW' }, { configLang: 'zh-TW' })
+  world(on, { ttl: '1h', isAutoCompact: false, leadSeconds: 120, isBandShown: true, ttlSource: 'fixed', lang: 'zh-TW' }, { configLang: 'zh-TW' })
   await start($)
 
   const ui = await pane($)
@@ -657,7 +694,7 @@ test('a vetoed compaction says why', async ($, on) => {
 })
 
 test('a failed auto-compact stays quiet', async ($, on) => {
-  const w = world(on, { ttl: '1h', isAutoCompact: true, leadSeconds: 120, isBandShown: true, ttlSource: 'manual' })
+  const w = world(on, { ttl: '1h', isAutoCompact: true, leadSeconds: 120, isBandShown: true, ttlSource: 'fixed' })
   await start($)
   await step($)
   w.compactEnds = new Error('not allowed from here')
@@ -668,7 +705,7 @@ test('a failed auto-compact stays quiet', async ($, on) => {
 })
 
 test('a vetoed auto-compact says why', async ($, on) => {
-  const w = world(on, { ttl: '1h', isAutoCompact: true, leadSeconds: 120, isBandShown: true, ttlSource: 'manual' })
+  const w = world(on, { ttl: '1h', isAutoCompact: true, leadSeconds: 120, isBandShown: true, ttlSource: 'fixed' })
   await start($)
   await step($)
   w.compactEnds = 'a hook said no'
@@ -717,7 +754,7 @@ test('in a headless session a /compact that is refused says why', async ($, on) 
 })
 
 test('in a headless session auto-compact runs /compact once, at the lead', async ($, on) => {
-  const w = world(on, { ttl: '1h', isAutoCompact: true, leadSeconds: 120, isBandShown: true, ttlSource: 'manual' })
+  const w = world(on, { ttl: '1h', isAutoCompact: true, leadSeconds: 120, isBandShown: true, ttlSource: 'fixed' })
   const runs: string[] = []
   on('command.run', { command: 'compact' }, (_$, e) => {
     runs.push(e.command)
@@ -1078,8 +1115,14 @@ test('the pane marks the current value of every setting as primary', async ($, o
   await step($)
 
   const p = await pane($)
-  expect((await p.find({ key: 'ttl-1h' }))?.props.variant).toBe('primary')
-  expect((await p.find({ key: 'ttl-5m' }))?.props.variant).toBe('secondary')
+  expect((await p.find({ key: 'ttl-auto' }))?.props.variant).toBe('primary')
+  expect((await p.find({ key: 'ttl-auto' }))?.props.label).toBe('auto (1h)')
+  expect((await p.find({ key: 'ttl-1h' }))?.props.variant).toBe('secondary')
+  await p.press({ key: 'ttl-5m' })
+  expect((await p.find({ key: 'ttl-5m' }))?.props.variant).toBe('primary')
+  expect(await p.find({ type: 'Text', text: /^TTL \(set by you\)$/ })).toBeDefined()
+  await p.press({ key: 'ttl-auto' })
+  expect((await p.find({ key: 'ttl-auto' }))?.props.label).toBe('auto (5m)')
   expect((await p.find({ key: 'auto' }))?.props.value).toBe('off')
   expect(await p.find({ key: 'lead-120' } as never)).toBeUndefined()
 
