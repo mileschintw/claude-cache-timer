@@ -598,7 +598,7 @@ test('/cache lang switches the language and later replies follow it', async ($, 
   world(on)
   await start($)
 
-  expect((await cache($, 'auto on')).text).toBe('Auto-compact before expiry: from 50k tokens')
+  expect((await cache($, 'auto on')).text).toBe('Auto-compact before expiry: from 100k tokens')
   expect((await cache($, 'auto 200k')).text).toBe('Auto-compact before expiry: from 200k tokens')
   expect((await cache($, 'auto 30k')).text).toContain('Usage: /cache')
   expect((await cache($, 'lang zh-TW')).text).toBe('介面語言已設為繁體中文')

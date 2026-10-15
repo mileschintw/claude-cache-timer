@@ -20,7 +20,7 @@ const DEFAULTS: CacheSettings = {
   ttl: '1h',
   isAutoCompact: false,
   leadSeconds: 120,
-  compactMinTokens: 50_000,
+  compactMinTokens: 100_000,
   isBandShown: true,
   status: 'bar',
   isSecondsShown: false,

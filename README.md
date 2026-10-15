@@ -33,7 +33,7 @@ Turn on auto-compact and the mod compacts the conversation 1, 2 or 5 minutes bef
 /cache auto 100k
 ```
 
-Auto-compact is off by default, because compaction drops detail. It only fires when Claude is idle, at most once per cache window, and only on a context at least as large as the threshold you pick: 50k, 100k, 200k or 500k tokens (`/cache auto on` uses 50k). Prefer to decide yourself? The **Compact** button does the same thing with one click.
+Auto-compact is off by default, because compaction drops detail. It only fires when Claude is idle, at most once per cache window, and only on a context at least as large as the threshold you pick: 50k, 100k, 200k or 500k tokens (`/cache auto on` uses 100k). Prefer to decide yourself? The **Compact** button does the same thing with one click.
 
 ## Install
 
@@ -113,7 +113,7 @@ The latest change wins. A language picked in the pane or with `/cache lang` is s
 
 - **Timing.** Every model request on the main thread reports how many tokens it read from the cache and how many it wrote. A request that read or wrote any restarts the countdown from that moment. Subagent requests use their own caches and are ignored.
 - **After a restart.** The timer is saved as it changes (for the 20 most recent sessions). A session last used before 0.3, or a fork, has nothing saved; its countdown is estimated from when the transcript's last response came in, and the pane shows only its context size.
-- **Auto-compact rules.** Auto-compact only fires when Claude is idle, at most once per cache window, and only when the context reaches the threshold you picked (50k by default). Below it, a summary saves too little to be worth the detail it drops. On a 5m cache the lead time is capped at 1 minute, so a pause shorter than 4 minutes never triggers a compaction.
+- **Auto-compact rules.** Auto-compact only fires when Claude is idle, at most once per cache window, and only when the context reaches the threshold you picked (100k by default). Below it, a summary saves too little to be worth the detail it drops. On a 5m cache the lead time is capped at 1 minute, so a pause shorter than 4 minutes never triggers a compaction.
 - **Compacting in the desktop app.** The desktop app (and any SDK or `-p` session) can't compact from a mod directly, so the Compact buttons run `/compact` there, which shows its own result in the transcript.
 - **Resets.** Any compaction, whether `/compact`, Claude Code's own auto-compact, or this mod's, replaces the cached prefix. The timer then waits for the next message.
 
