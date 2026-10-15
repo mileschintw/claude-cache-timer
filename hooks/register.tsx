@@ -352,8 +352,17 @@ async function openPane($: EngineInterface) {
 }
 
 async function saveSettings($: EngineInterface, fn: (s: CacheSettings) => CacheSettings) {
+  const before = (await read($, settings)).lang
   await update($, settings, s => fn(s ?? DEFAULTS))
-  await $.store.set(STORE_KEY, await read($, settings))
+  const after = await read($, settings)
+  await $.store.set(STORE_KEY, after)
+  if (after.lang !== before) await retitlePane($)
+}
+
+/** Re-opening an open pane's id only retitles it; a closed pane stays closed. */
+async function retitlePane($: EngineInterface) {
+  if (!(await $.ui.panes()).some(pane => pane.id === PANE)) return
+  await $.ui.open({ id: PANE, title: (await strings($)).paneTitle })
 }
 
 async function markCompacted($: EngineInterface) {

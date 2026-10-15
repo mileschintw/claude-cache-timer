@@ -77,6 +77,16 @@ function world(on: On, settings?: Record<string, unknown>, store: Record<string,
 
     return { value: { isPlaced: true as const } }
   })
+  // The panes opened so far, each with the title of its latest open.
+  on('ui.panes', () => ({
+    value: [...new Map(w.opens.map(o => [(o as { id: string }).id, o as { id: string; title?: string }])).values()].map(o => ({
+      id: o.id,
+      title: o.title ?? o.id,
+      isShown: true,
+      isFocused: false,
+      isPlaced: true,
+    })),
+  }))
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('ui.log', () => ({ value: undefined }))
   on('turn.complete', (_$, e) => ({ text: e.answer }))
@@ -525,6 +535,27 @@ test('the pane language buttons switch the UI', async ($, on) => {
   expect(await ui.find({ type: 'Text', text: /^語言$/ })).toBeDefined()
   await ui.press({ key: 'lang-en' })
   expect(await ui.find({ type: 'Text', text: /^Language$/ })).toBeDefined()
+})
+
+test('a language switch retitles the open pane', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await cache($, '')
+  expect(w.opens).toEqual([expect.objectContaining({ id: 'cache-timer', title: 'Prompt cache' })])
+
+  const ui = await pane($)
+  await ui.press({ key: 'lang-zh-TW' })
+  expect(w.opens.at(-1)).toEqual({ id: 'cache-timer', title: 'Prompt 快取' })
+  await cache($, 'lang en')
+  expect(w.opens.at(-1)).toEqual({ id: 'cache-timer', title: 'Prompt cache' })
+  expect(w.opens).toHaveLength(3)
+})
+
+test('a language switch leaves a closed pane closed', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await cache($, 'lang zh-TW')
+  expect(w.opens).toEqual([])
 })
 
 test('/cache lang switches the language and later replies follow it', async ($, on) => {
