@@ -431,8 +431,16 @@ async function compactByCommand($: EngineInterface): Promise<CompactOutcome> {
   return { kind: 'ran' }
 }
 
-/** The Compact buttons: say how it went, unless it compacted or `/compact` already said so. */
-async function pressCompact($: EngineInterface) {
+/**
+ * The Compact buttons. A press handler has a 10-second budget and a compaction
+ * can take longer, so the press only starts it and returns.
+ */
+function pressCompact($: EngineInterface) {
+  void compactAndReport($).catch(err => debugLog($, `compact press failed: ${errorText(err)}`))
+}
+
+/** Compacts, then says how it went, unless it compacted or `/compact` already said so. */
+async function compactAndReport($: EngineInterface) {
   const outcome = await compactNow($)
   if (outcome.kind === 'compacted' || outcome.kind === 'ran') return
   $.ui.toast(outcomeText(await strings($), outcome))

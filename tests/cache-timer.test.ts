@@ -15,6 +15,8 @@ type World = {
   nowWrites: number
   /** How the next compaction ends: a skip reason, or an error it rejects with. */
   compactEnds?: string | Error
+  /** When set, a compaction waits for it before it ends. */
+  compactGate?: Promise<void>
   /** The mod's `$.store`, kept across a simulated restart. */
   store: Record<string, unknown>
 }
@@ -70,7 +72,8 @@ function world(on: On, settings?: Record<string, unknown>, store: Record<string,
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('ui.log', () => ({ value: undefined }))
   on('turn.complete', (_$, e) => ({ text: e.answer }))
-  on('session.compact', () => {
+  on('session.compact', async () => {
+    await w.compactGate
     if (w.compactEnds instanceof Error) throw w.compactEnds
     if (w.compactEnds !== undefined) return { skip: w.compactEnds }
     w.compactions += 1
@@ -593,6 +596,59 @@ test('in a headless session auto-compact runs /compact once, at the lead', async
   expect(w.compactions).toBe(0)
   // /compact reports itself in the transcript, so no toast says it compacted.
   expect(w.toasts.some(t => t.includes('compacted'))).toBe(false)
+})
+
+/** A promise and the function that resolves it. */
+function gate() {
+  let open = () => {}
+  const opened = new Promise<void>(resolve => {
+    open = resolve
+  })
+
+  return { opened, open }
+}
+
+/** Lets pending work run until `isDone` holds; throws if it never does. */
+async function until(isDone: () => boolean) {
+  for (let i = 0; i < 1000 && !isDone(); i++) await Promise.resolve()
+  if (!isDone()) throw new Error('never done')
+}
+
+test('a Compact press returns before a slow /compact ends', async ($, on) => {
+  const w = world(on)
+  const g = gate()
+  const runs: string[] = []
+  on('command.run', { command: 'compact' }, async (_$, e) => {
+    await g.opened
+    runs.push(e.command)
+
+    return { text: 'Compacted' }
+  })
+  await start($, false)
+  await step($)
+
+  await (await band($, 'desktop')).press({ key: 'compact' })
+  expect(runs).toEqual([])
+
+  g.open()
+  await until(() => runs.length === 1)
+  expect(w.toasts).toEqual([])
+})
+
+test('a Compact press returns before a slow compaction ends, and still reports how it went', async ($, on) => {
+  const w = world(on)
+  const g = gate()
+  await start($)
+  await step($)
+  w.compactEnds = 'a hook said no'
+  w.compactGate = g.opened
+
+  await (await pane($)).press({ key: 'compact-now' })
+  expect(w.toasts).toEqual([])
+
+  g.open()
+  await until(() => w.toasts.length === 1)
+  expect(w.toasts).toEqual(['Compaction skipped: a hook said no'])
 })
 
 /** What the mod keeps for session `sess-1` after one hit at `at`, as a restart finds it. */
