@@ -571,6 +571,30 @@ test('in a headless session a /compact that is refused says why', async ($, on) 
   expect(w.toasts[0]).toMatch(/^Compaction failed: .+/)
 })
 
+test('in a headless session auto-compact runs /compact once, at the lead', async ($, on) => {
+  const w = world(on, { ttl: '1h', isAutoCompact: true, leadSeconds: 120, isBandShown: true, ttlSource: 'manual' })
+  const runs: string[] = []
+  on('command.run', { command: 'compact' }, (_$, e) => {
+    runs.push(e.command)
+
+    return { text: 'Compacted' }
+  })
+  await start($, false)
+  await step($)
+
+  await w.clock.advance(57 * MIN)
+  expect(runs).toEqual([])
+
+  await w.clock.advance(1 * MIN + 1000)
+  expect(runs).toEqual(['compact'])
+
+  await w.clock.advance(1 * MIN)
+  expect(runs).toEqual(['compact'])
+  expect(w.compactions).toBe(0)
+  // /compact reports itself in the transcript, so no toast says it compacted.
+  expect(w.toasts.some(t => t.includes('compacted'))).toBe(false)
+})
+
 /** What the mod keeps for session `sess-1` after one hit at `at`, as a restart finds it. */
 const savedSession = (at: number) => ({
   'session:sess-1': {
