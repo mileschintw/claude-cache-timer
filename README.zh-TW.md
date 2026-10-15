@@ -67,7 +67,7 @@ git clone https://github.com/mileschintw/claude-cache-timer.git ~/.claude/mods/c
 之後開啟的每個 session 都會載入它。
 </details>
 
-**需求**：支援 function-hook mod 的 Claude Code 版本（目前仍是搶先體驗 API）。已在 Claude Code 2.1.295 的終端機與桌面版上測試。
+**需求**：支援 function-hook mod 的 Claude Code 版本（目前仍是搶先體驗 API）。已在 Claude Code 2.1.300 的終端機與桌面版上測試。
 
 ## 完整功能
 

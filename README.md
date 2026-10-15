@@ -67,7 +67,7 @@ Then add the folder to the `env` block of `~/.claude/settings.json`:
 Every session started after that loads the mod.
 </details>
 
-**Requirements:** a Claude Code build with function-hook mods (an early-access API). Tested on Claude Code 2.1.295 in the terminal and in the desktop app.
+**Requirements:** a Claude Code build with function-hook mods (an early-access API). Tested on Claude Code 2.1.300 in the terminal and in the desktop app.
 
 ## All features
 
