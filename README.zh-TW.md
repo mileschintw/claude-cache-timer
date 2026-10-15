@@ -24,7 +24,7 @@ Claude Code 每次請求都會把對話前段放進快取。快取還有效時�
 - **`/cache` 面板**：顯示剩餘時間、本 session 的命中率、過期與壓縮次數，以及每次請求快取命中比例的迷你圖，所有設定也都在這裡。
 - **到期提醒**：1h 快取在過期前 5 分鐘提醒（5m 快取是前 1 分鐘），過期時再提醒一次。
 - **自動壓縮（選用）**：預設關閉。開啟後會在過期前 1、2 或 5 分鐘、快取還有效時壓縮對話。
-- **一鍵壓縮**：在進度條或面板按按鈕，或輸入 `/cache compact`。
+- **一鍵壓縮**：在進度條或面板按按鈕。
 - **英文或繁體中文介面**：可在 plugin 設定、面板或用 `/cache lang` 選擇介面語言。
 - **TTL 自動偵測**：一開始假設是 1h，再依 API 回報的實際情況自動修正。隔了 5 分鐘以上還能讀到快取，代表是 1h；隔 5 到 55 分鐘後必須整段重寫，代表是 5m。切換模型時，Claude Code 也會直接回報 TTL。
 
@@ -74,7 +74,6 @@ git clone https://github.com/mileschintw/claude-cache-timer.git ~/.claude/mods/c
 | `/cache band on` / `off` | 顯示或隱藏提示框上方的進度條 |
 | `/cache seconds on` / `off` | 一律顯示 `mm:ss`，不在剩 5 分鐘前只顯示分鐘（預設關） |
 | `/cache lang en` / `zh-TW` | 切換介面語言 |
-| `/cache compact` | 立即壓縮對話 |
 
 設定會跨 session 保存。
 

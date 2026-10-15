@@ -96,7 +96,7 @@ export const STRINGS = {
   en: {
     notifyTitle: 'Cache timer',
     bandPrefix: 'cache',
-    commandDescription: 'Prompt cache timer: open the pane, or auto on|off, ttl 5m|1h, band on|off, seconds on|off, lang en|zh-TW, compact',
+    commandDescription: 'Prompt cache timer: open the pane, or auto on|off, ttl 5m|1h, band on|off, seconds on|off, lang en|zh-TW',
     paneTitle: 'Prompt cache',
     on: 'on',
     off: 'off',
@@ -123,11 +123,9 @@ export const STRINGS = {
     bandReply: (shown: string) => `Band above the prompt: ${shown}`,
     secondsReply: (onOff: string) => `Always show seconds: ${onOff}`,
     langReply: 'Language set to English',
-    compacted: 'Compacted the conversation.',
     compactFailed: (why: string) => `Compaction failed: ${why}`,
     alreadyCompacting: 'Already compacting the conversation',
-    ranCompact: 'Ran /compact.',
-    usage: 'Usage: /cache [auto on|off] [ttl 5m|1h] [band on|off] [seconds on|off] [lang en|zh-TW] [compact]',
+    usage: 'Usage: /cache [auto on|off] [ttl 5m|1h] [band on|off] [seconds on|off] [lang en|zh-TW]',
     autoLabel: (onOff: string) => `auto-compact ${onOff}`,
     compactNow: 'Compact',
     pane: 'Pane',
@@ -162,7 +160,7 @@ export const STRINGS = {
   'zh-TW': {
     notifyTitle: '快取計時器',
     bandPrefix: 'cache',
-    commandDescription: 'Prompt 快取計時器：開啟面板，或 auto on|off、ttl 5m|1h、band on|off、seconds on|off、lang en|zh-TW、compact',
+    commandDescription: 'Prompt 快取計時器：開啟面板，或 auto on|off、ttl 5m|1h、band on|off、seconds on|off、lang en|zh-TW',
     paneTitle: 'Prompt 快取',
     on: '開',
     off: '關',
@@ -189,11 +187,9 @@ export const STRINGS = {
     bandReply: (shown: string) => `提示框上方進度條：${shown}`,
     secondsReply: (onOff: string) => `永遠顯示秒數：${onOff}`,
     langReply: '介面語言已設為繁體中文',
-    compacted: '已壓縮對話。',
     compactFailed: (why: string) => `壓縮失敗：${why}`,
     alreadyCompacting: '正在壓縮對話',
-    ranCompact: '已執行 /compact。',
-    usage: '用法：/cache [auto on|off] [ttl 5m|1h] [band on|off] [seconds on|off] [lang en|zh-TW] [compact]',
+    usage: '用法：/cache [auto on|off] [ttl 5m|1h] [band on|off] [seconds on|off] [lang en|zh-TW]',
     autoLabel: (onOff: string) => `自動壓縮 ${onOff}`,
     compactNow: '立即壓縮',
     pane: '面板',
@@ -272,10 +268,11 @@ type CompactOutcome =
   /** Ran `/compact`, which reports its own result in the transcript. */
   | { kind: 'ran' }
 
-const outcomeText = (L: Strings, o: CompactOutcome) => {
+/** An outcome worth a toast: one that didn't compact, and didn't run `/compact` (which reports itself). */
+type CompactNotice = Exclude<CompactOutcome, { kind: 'compacted' } | { kind: 'ran' }>
+
+const outcomeText = (L: Strings, o: CompactNotice) => {
   switch (o.kind) {
-    case 'compacted':
-      return L.compacted
     case 'skipped':
       return L.compactSkipped(o.reason)
     case 'busy':
@@ -284,8 +281,6 @@ const outcomeText = (L: Strings, o: CompactOutcome) => {
       return L.compactFailed(o.reason)
     case 'already':
       return L.alreadyCompacting
-    case 'ran':
-      return L.ranCompact
   }
 }
 
@@ -439,7 +434,8 @@ async function compactByCommand($: EngineInterface): Promise<CompactOutcome> {
 /** The Compact buttons: say how it went, unless it compacted or `/compact` already said so. */
 async function pressCompact($: EngineInterface) {
   const outcome = await compactNow($)
-  if (outcome.kind !== 'compacted' && outcome.kind !== 'ran') $.ui.toast(outcomeText(await strings($), outcome))
+  if (outcome.kind === 'compacted' || outcome.kind === 'ran') return
+  $.ui.toast(outcomeText(await strings($), outcome))
 }
 
 /** The time-driven text the band and pane show at `t`: the countdown and "N min ago". */
@@ -541,7 +537,7 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: 'cache',
       description: (await strings($)).commandDescription,
-      argumentHint: '[auto on|off] [ttl 5m|1h] [band on|off] [seconds on|off] [lang en|zh-TW] [compact]',
+      argumentHint: '[auto on|off] [ttl 5m|1h] [band on|off] [seconds on|off] [lang en|zh-TW]',
     })
 
     const isRestored = await restoreSession($)
@@ -681,8 +677,6 @@ export const register: Register = (on, options) => {
 
       return { text: STRINGS[lang].langReply }
     }
-
-    if (verb === 'compact') return { text: outcomeText(L, await compactNow($)) }
 
     return { text: L.usage }
   })

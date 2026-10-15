@@ -519,24 +519,6 @@ test('a vetoed compaction says why', async ($, on) => {
   expect(w.toasts).toEqual(['Compaction skipped: a hook said no'])
 })
 
-test('/cache compact replies with what happened', async ($, on) => {
-  const w = world(on)
-  await start($)
-  await step($)
-
-  // The host refuses a compaction from inside a command.run hook; the reply says so.
-  const reply = (await cache($, 'compact')).text
-  expect(reply).toMatch(/^Compaction failed: .*command\.run/)
-  expect(w.compactions).toBe(0)
-
-  await $.turn.start({ text: 'go', turnId: 't2' })
-  expect((await cache($, 'compact')).text).toBe('Claude is replying; compact once this turn ends')
-  await $.turn.complete({ turnId: 't2', reason: 'answer', answer: 'done', durationMs: 1, isAborted: false } as never)
-
-  await cache($, 'lang zh-TW')
-  expect((await cache($, 'compact')).text).toMatch(/^壓縮失敗：/)
-})
-
 test('a failed auto-compact stays quiet', async ($, on) => {
   const w = world(on, { ttl: '1h', isAutoCompact: true, leadSeconds: 120, isBandShown: true, ttlSource: 'manual' })
   await start($)
@@ -692,4 +674,15 @@ test('a fresh start estimates nothing', async ($, on) => {
   await resume($, 'startup')
 
   expect(await (await pane($)).find({ type: 'Text', text: /No cache yet/ })).toBeDefined()
+})
+
+test('/cache compact is gone: it prints the usage, and the native /compact does the job', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await step($)
+
+  const reply = (await cache($, 'compact')).text
+  expect(reply).toContain('Usage: /cache')
+  expect(reply).not.toContain('compact]')
+  expect(w.compactions).toBe(0)
 })

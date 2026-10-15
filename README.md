@@ -24,7 +24,7 @@ On a long session that is a real cost, and nothing in the UI tells you when it i
 - **`/cache` pane.** Shows the time left, this session's hit rate, expiries and compactions, and a sparkline of how much of each request the cache served. It also holds the settings.
 - **Reminders.** A toast 5 minutes before a 1h cache expires (1 minute before a 5m one), and another when it has expired.
 - **Optional auto-compact.** Off by default. When on, it compacts the conversation 1, 2 or 5 minutes before expiry, while the cache is still warm.
-- **One-click compact.** From the band or the pane, or with `/cache compact`.
+- **One-click compact.** From the band or the pane.
 - **English or Traditional Chinese.** Pick the interface language in the plugin's settings, in the pane, or with `/cache lang`.
 - **TTL detection.** The TTL starts at 1h and corrects itself from what the API reports. A cache read after more than 5 minutes proves 1h. A full re-write after 5 to 55 minutes proves 5m. A model switch also reports the TTL directly.
 
@@ -74,7 +74,6 @@ The band appears after your first message. Everything else lives in `/cache`:
 | `/cache band on` / `off` | Show or hide the band above the prompt |
 | `/cache seconds on` / `off` | Show `mm:ss` the whole time instead of whole minutes until the last 5 minutes (off by default) |
 | `/cache lang en` / `zh-TW` | Switch the interface language |
-| `/cache compact` | Compact the conversation now |
 
 Settings are saved across sessions.
 
