@@ -16,11 +16,11 @@ Works in the Claude Code terminal and in the Claude desktop app's Code tab. Engl
 ### A clean, glanceable progress bar
 
 - **In the status line, always.** `████░░░░ 27 min left` next to the `cache-timer` label, on by default, with no setup. Keep just `27 min left` if space is tight.
-- **One row above the prompt.** On by default, and one click hides it. The bar goes from green to yellow to red as the cache runs down. Next to it: the time left, whether auto-compact is on, and a Compact button. When the window narrows, the row drops its less important parts and never wraps.
+- **One row above the prompt.** On by default, and one click hides it. The bar goes from green to yellow to red as the cache runs down. Next to it: the time left, when auto-compact will run (only while it is on), and a Compact button. When the window narrows, the row drops its less important parts and never wraps.
 - **Native in the desktop app.** The desktop app draws the bar as a smooth rounded SVG bar; the terminal uses block characters:
 
   ```
-  cache █████░░░░░ 28 min · auto-compact off [ Compact ] [ Pane ] ✕
+  cache █████░░░░░ 28 min · auto-compacts 2 min before expiry [ Compact ] [ Pane ] ✕
   ```
 
 ### Built-in auto-compact

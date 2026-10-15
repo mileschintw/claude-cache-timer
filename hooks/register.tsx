@@ -170,7 +170,7 @@ export const STRINGS = {
     compactFailed: (why: string) => `Compaction failed: ${why}`,
     alreadyCompacting: 'Already compacting the conversation',
     usage: 'Usage: /cache [auto off|50k|100k|200k|500k] [ttl 5m|1h] [band on|off] [status off|time|bar] [seconds on|off] [lang en|zh-TW]',
-    autoLabel: (onOff: string) => `auto-compact ${onOff}`,
+    autoBand: (lead: string) => `auto-compacts ${lead} before expiry`,
     compactNow: 'Compact',
     pane: 'Pane',
     hide: 'Hide',
@@ -233,7 +233,7 @@ export const STRINGS = {
     compactFailed: (why: string) => `壓縮失敗：${why}`,
     alreadyCompacting: '正在壓縮對話',
     usage: '用法：/cache [auto off|50k|100k|200k|500k] [ttl 5m|1h] [band on|off] [status off|time|bar] [seconds on|off] [lang en|zh-TW]',
-    autoLabel: (onOff: string) => `自動壓縮 ${onOff}`,
+    autoBand: (lead: string) => `到期前 ${lead}自動壓縮`,
     compactNow: '立即壓縮',
     pane: '面板',
     hide: '隱藏',
@@ -940,13 +940,18 @@ export const register: Register = (on, options) => {
     const fraction = remaining / total
     const isLive = remaining > 0
     const head = isLive ? countdown(s.lang, remaining, s.isSecondsShown) : L.expired
-    const meta = isLive ? L.autoLabel(s.isAutoCompact ? L.on : L.off) : L.bandRewrite(tokens(contextOf(hit)))
+    // While live, only auto-compact that is on: "auto-compact off" reads as Claude Code's own being off.
+    const meta = !isLive
+      ? L.bandRewrite(tokens(contextOf(hit)))
+      : s.isAutoCompact
+        ? L.autoBand(L.minutes(Math.max(1, Math.round(leadMs(s) / 60_000))))
+        : undefined
     const isCompactingNow = (await read($, compactingSince)) !== 0
     const compactLabel = isCompactingNow ? L.compacting : L.compactNow
     const layout = bandLayout(e.props.bodyColumns, {
       prefix: isLive ? cells(L.bandPrefix) : 0,
       head: cells(head),
-      meta: cells(`· ${meta}`),
+      meta: meta === undefined ? 0 : cells(`· ${meta}`),
       compact: cells(compactLabel) + BUTTON_CHROME,
       pane: cells(L.pane) + BUTTON_CHROME,
       hide: isTerminal ? cells(hideLabel) : cells(hideLabel) + BUTTON_CHROME,
@@ -961,7 +966,7 @@ export const register: Register = (on, options) => {
         <Text color={color} wrap="truncate">
           {head}
         </Text>
-        {layout.meta && (
+        {layout.meta && meta !== undefined && (
           <Text dimColor wrap="truncate">
             · {meta}
           </Text>

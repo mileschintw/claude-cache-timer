@@ -513,7 +513,9 @@ test('the UI is English by default', async ($, on) => {
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await band($, surface)
-    expect(await ui.find({ type: 'Text', text: /auto-compact off/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^60 min$/ })).toBeDefined()
+    // Auto-compact that is off says nothing, so it isn't read as Claude Code's own.
+    expect(await ui.find({ type: 'Text', text: /compact/ })).toBeUndefined()
   }
   const ui = await pane($)
   expect(await ui.find({ type: 'Text', text: /^Settings$/ })).toBeDefined()
@@ -521,13 +523,13 @@ test('the UI is English by default', async ($, on) => {
 })
 
 test('lang zh-TW in userConfig draws in Traditional Chinese', { options: { lang: 'zh-TW' } }, async ($, on) => {
-  world(on)
+  world(on, { isBandShown: true, isAutoCompact: true })
   await start($)
   await step($)
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await band($, surface)
-    expect(await ui.find({ type: 'Text', text: /自動壓縮 關/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /到期前 2 分鐘自動壓縮/ })).toBeDefined()
   }
   const ui = await pane($)
   expect(await ui.find({ type: 'Text', text: /TTL（預設）/ })).toBeDefined()
@@ -939,14 +941,14 @@ const bandAt = ($: Engine, surface: 'terminal' | 'desktop', bodyColumns: number)
   })
 
 test('the band stays one row: parts drop as it narrows, and Compact always stays', async ($, on) => {
-  const w = world(on)
+  const w = world(on, { isBandShown: true, isAutoCompact: true })
   await start($)
   await step($)
   await w.clock.advance(1000)
 
   const wide = await bandAt($, 'terminal', 100)
   expect(await wide.find({ type: 'Text', text: /^[█░]{10}$/ })).toBeDefined()
-  expect(await wide.find({ type: 'Text', text: /auto-compact off/ })).toBeDefined()
+  expect(await wide.find({ type: 'Text', text: /auto-compacts 2 min before expiry/ })).toBeDefined()
   await wide.unmount()
 
   const narrow = await bandAt($, 'terminal', 40)

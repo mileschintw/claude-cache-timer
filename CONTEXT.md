@@ -25,7 +25,7 @@ The time left before the cache expires, shown in whole minutes or as `mm:ss`.
 _Avoid_: timer (the whole mod), TTL (the cache's full lifetime)
 
 **Auto-compact**:
-A compaction the mod starts by itself shortly before the cache expires, when the person has turned it on. It is set in the pane, as off or a threshold; the band only shows whether it is on.
+A compaction the mod starts by itself shortly before the cache expires, when the person has turned it on. It is set in the pane, as off or a threshold; the band says when it will run, and says nothing while it is off, so it isn't mistaken for Claude Code's own auto-compact.
 _Avoid_: auto mode
 
 **Threshold**:
