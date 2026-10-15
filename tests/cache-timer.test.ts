@@ -544,6 +544,8 @@ test('a write with no read after a 10 minute gap proves a 5m TTL', async ($, on)
   const ui = await pane($)
   expect(await ui.find({ type: 'Text', text: /TTL \(detected\)/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^05:00 left$/ })).toBeDefined()
+  expect((await ui.find({ key: 'ttl-auto' }))?.props.label).toBe('auto (5m)')
+  expect((await ui.find({ key: 'ttl-auto' }))?.props.variant).toBe('primary')
 })
 
 
