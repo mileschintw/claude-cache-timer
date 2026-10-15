@@ -151,7 +151,6 @@ export const STRINGS = {
     autoCompact: 'Auto-compact before expiry',
     lead: 'Lead',
     minutes: (m: number) => `${m} min`,
-    minutesOf: (m: number, total: number) => `${m} / ${total} min`,
     leadNote: (sec: number, min: string) =>
       `Compacts with ${sec}s left (at most 1 minute ahead on a 5m TTL); never auto-compacts under ${min} tokens of context.`,
     band: 'Band above the prompt',
@@ -217,7 +216,6 @@ export const STRINGS = {
     autoCompact: '到期前自動壓縮',
     lead: '提前',
     minutes: (m: number) => `${m} 分`,
-    minutesOf: (m: number, total: number) => `${m} / ${total} 分`,
     leadNote: (sec: number, min: string) =>
       `實際在剩 ${sec} 秒時壓縮（5m TTL 最多提前 1 分鐘）；上下文不到 ${min} tokens 時不自動壓縮。`,
     band: '提示框上方進度條',
@@ -231,14 +229,12 @@ export const STRINGS = {
 type Strings = (typeof STRINGS)[CacheLang]
 
 /**
- * Time left as shown in the band and pane: whole minutes of the total, rounded
+ * Time left as shown in the status line, band and pane: whole minutes, rounded
  * up, while more than 5 minutes are left; from there (or always, with seconds
- * on) `mm:ss` with no total.
+ * on) `mm:ss`.
  */
-export const countdown = (lang: CacheLang, remainingMs: number, totalMs: number, isSecondsShown: boolean) =>
-  isSecondsShown || remainingMs <= SECONDS_SHOWN_FROM_MS
-    ? clock(remainingMs)
-    : STRINGS[lang].minutesOf(Math.ceil(remainingMs / 60_000), Math.round(totalMs / 60_000))
+export const countdown = (lang: CacheLang, remainingMs: number, isSecondsShown: boolean) =>
+  isSecondsShown || remainingMs <= SECONDS_SHOWN_FROM_MS ? clock(remainingMs) : STRINGS[lang].minutes(Math.ceil(remainingMs / 60_000))
 
 const LANG_LABEL: Record<CacheLang, string> = { en: 'English', 'zh-TW': '繁體中文' }
 
@@ -312,7 +308,7 @@ async function summary($: EngineInterface) {
     hit === null
       ? L.noTimer
       : remaining > 0
-        ? L.remainingHead(countdown(s.lang, remaining, ttlMs(s.ttl), s.isSecondsShown))
+        ? L.remainingHead(countdown(s.lang, remaining, s.isSecondsShown))
         : L.expired
   const rate = st.requests === 0 ? '—' : `${Math.round((st.hits / st.requests) * 100)}%`
 
@@ -454,7 +450,7 @@ async function compactAndReport($: EngineInterface) {
 /** The time-driven text the band and pane show at `t`: the countdown and "N min ago". */
 const shownAt = (s: CacheSettings, hit: CacheHit, t: number) => {
   const remaining = hit.at + ttlMs(s.ttl) - t
-  const left = remaining > 0 ? countdown(s.lang, remaining, ttlMs(s.ttl), s.isSecondsShown) : ''
+  const left = remaining > 0 ? countdown(s.lang, remaining, s.isSecondsShown) : ''
 
   return `${left}|${wholeMinutes(t - hit.at)}`
 }
@@ -490,7 +486,7 @@ async function showStatus($: EngineInterface) {
   if (hit !== null && s.isStatusShown) {
     const L: Strings = STRINGS[s.lang]
     const remaining = hit.at + ttlMs(s.ttl) - (await $.clock.now())
-    text = remaining > 0 ? L.remainingHead(countdown(s.lang, remaining, ttlMs(s.ttl), s.isSecondsShown)) : L.expired
+    text = remaining > 0 ? L.remainingHead(countdown(s.lang, remaining, s.isSecondsShown)) : L.expired
   }
   const t = await $.clock.now()
   const resendMs = isRedrawn ? STATUS_REDRAWN_RESEND_MS : STATUS_RESEND_MS
@@ -743,7 +739,7 @@ export const register: Register = (on, options) => {
         <Box flexDirection="row" gap={1}>
           {remaining > 0 ? (
             <Text color={tone(fraction)}>
-              {L.bandPrefix} {bar(fraction, width)} {countdown(s.lang, remaining, total, s.isSecondsShown)}
+              {L.bandPrefix} {bar(fraction, width)} {countdown(s.lang, remaining, s.isSecondsShown)}
             </Text>
           ) : (
             <Text color="error">{L.expired}</Text>
@@ -783,7 +779,7 @@ export const register: Register = (on, options) => {
       ) : remaining > 0 ? (
         <Box flexDirection="column">
           <Text bold color={tone(fraction)}>
-            {L.remaining(countdown(s.lang, remaining, total, s.isSecondsShown))}
+            {L.remaining(countdown(s.lang, remaining, s.isSecondsShown))}
           </Text>
           <Text color={tone(fraction)}>{bar(fraction, width)}</Text>
         </Box>

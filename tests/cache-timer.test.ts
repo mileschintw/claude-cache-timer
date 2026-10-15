@@ -148,7 +148,7 @@ test('band counts down from the TTL after a cache hit', async ($, on) => {
       component: 'AbovePrompt',
       props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 100 } as never,
     })
-    expect(await ui.find({ type: 'Text', text: /^cache [█░]+ 60 \/ 60 min$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^cache [█░]+ 60 min$/ })).toBeDefined()
   }
 })
 
@@ -160,10 +160,10 @@ test('band and pane show minutes until 5 minutes are left, then mm:ss alone', { 
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await band($, surface)
-    expect(await ui.find({ type: 'Text', text: /28 \/ 60 min/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /28 min/ })).toBeDefined()
   }
   const p = await pane($)
-  expect(await p.find({ type: 'Text', text: /^28 \/ 60 min left$/ })).toBeDefined()
+  expect(await p.find({ type: 'Text', text: /^28 min left$/ })).toBeDefined()
 
   await w.clock.advance(22 * MIN + 31_000)
   for (const surface of ['terminal', 'desktop'] as const) {
@@ -178,13 +178,13 @@ test('/cache seconds and the pane button switch to mm:ss the whole time', async 
   await start($)
   await step($)
   const p = await pane($)
-  expect(await p.find({ type: 'Text', text: /^60 \/ 60 min left$/ })).toBeDefined()
+  expect(await p.find({ type: 'Text', text: /^60 min left$/ })).toBeDefined()
 
   expect((await cache($, 'seconds on')).text).toBe('Always show seconds: on')
   expect(await p.find({ type: 'Text', text: /^60:00 left$/ })).toBeDefined()
 
   await p.press({ key: 'seconds' })
-  expect(await p.find({ type: 'Text', text: /^60 \/ 60 min left$/ })).toBeDefined()
+  expect(await p.find({ type: 'Text', text: /^60 min left$/ })).toBeDefined()
 
   expect((await cache($, 'lang zh-TW')).text).toBe('介面語言已設為繁體中文')
   expect((await cache($, 'seconds on')).text).toBe('永遠顯示秒數：開')
@@ -219,10 +219,10 @@ test('the status line follows the countdown, says when it expired, and clears af
 
   await step($)
   await w.clock.advance(1000)
-  expect(w.statuses.at(-1)).toBe('Cache has 60 / 60 min left')
+  expect(w.statuses.at(-1)).toBe('Cache has 60 min left')
 
   await w.clock.advance(MIN)
-  expect(w.statuses.at(-1)).toBe('Cache has 59 / 60 min left')
+  expect(w.statuses.at(-1)).toBe('Cache has 59 min left')
 
   await w.clock.advance(60 * MIN)
   expect(w.statuses.at(-1)).toBe('Cache expired')
@@ -243,7 +243,7 @@ test('the status line is in Traditional Chinese with lang zh-TW', { options: { l
   await step($)
   await w.clock.advance(1000)
 
-  expect(w.statuses.at(-1)).toBe('快取剩 60 / 60 分')
+  expect(w.statuses.at(-1)).toBe('快取剩 60 分')
 })
 
 test('by default the status line shows the countdown and the band is off', async ($, on) => {
@@ -252,7 +252,7 @@ test('by default the status line shows the countdown and the band is off', async
   await step($)
   await w.clock.advance(1000)
 
-  expect(w.statuses.at(-1)).toBe('Cache has 60 / 60 min left')
+  expect(w.statuses.at(-1)).toBe('Cache has 60 min left')
   expect(await (await band($, 'terminal')).find({ key: 'compact' })).toBeUndefined()
 
   await (await pane($)).press({ key: 'band' })
@@ -264,7 +264,7 @@ test('the status line turns off and on from /cache and the pane', async ($, on) 
   await start($)
   await step($)
   await w.clock.advance(1000)
-  expect(w.statuses.at(-1)).toBe('Cache has 60 / 60 min left')
+  expect(w.statuses.at(-1)).toBe('Cache has 60 min left')
 
   expect((await cache($, 'status off')).text).toBe('Countdown in the status line: hidden')
   await w.clock.advance(1000)
@@ -276,7 +276,7 @@ test('the status line turns off and on from /cache and the pane', async ($, on) 
 
   await (await pane($)).press({ key: 'status' })
   await w.clock.advance(1000)
-  expect(w.statuses.at(-1)).toBe('Cache has 59 / 60 min left')
+  expect(w.statuses.at(-1)).toBe('Cache has 59 min left')
 })
 
 test('the status line stays off after a restart', async ($, on) => {
@@ -427,7 +427,7 @@ test('a read after a 10 minute gap proves a 1h TTL', async ($, on) => {
 
   const ui = await pane($)
   expect(await ui.find({ type: 'Text', text: /TTL \(detected\)/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^60 \/ 60 min left$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^60 min left$/ })).toBeDefined()
 })
 
 test('a write with no read after a 10 minute gap proves a 5m TTL', async ($, on) => {
@@ -470,7 +470,7 @@ test('lang zh-TW in userConfig draws in Traditional Chinese', { options: { lang:
   }
   const ui = await pane($)
   expect(await ui.find({ type: 'Text', text: /TTL（預設）/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^剩餘 60 \/ 60 分$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^剩餘 60 分$/ })).toBeDefined()
 })
 
 test('lang zh-TW in userConfig reminds in Traditional Chinese', { options: { lang: 'zh-TW' } }, async ($, on) => {
@@ -717,10 +717,10 @@ test('after a restart the band and pane show the saved hit right away', async ($
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await band($, surface)
-    expect(await ui.find({ type: 'Text', text: /^cache [█░]+ 50 \/ 60 min$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^cache [█░]+ 50 min$/ })).toBeDefined()
   }
   const p = await pane($)
-  expect(await p.find({ type: 'Text', text: /^50 \/ 60 min left$/ })).toBeDefined()
+  expect(await p.find({ type: 'Text', text: /^50 min left$/ })).toBeDefined()
   expect(await p.find({ type: 'Text', text: /read 150k · wrote 2k/ })).toBeDefined()
   expect(await p.find({ type: 'Text', text: /\(1\/1 requests\)/ })).toBeDefined()
   expect(w.toasts).toHaveLength(0)
@@ -730,7 +730,7 @@ test('after a restart the status line shows the saved hit right away', async ($,
   const w = world(on, undefined, savedSession(1_000_000 - 10 * MIN))
   await start($)
 
-  expect(w.statuses.at(-1)).toBe('Cache has 50 / 60 min left')
+  expect(w.statuses.at(-1)).toBe('Cache has 50 min left')
 })
 
 test('an unchanged status line is set again every 15 seconds, in case the first came too early', async ($, on) => {
@@ -804,10 +804,10 @@ test('a session saved before this version is estimated from the resume', async (
   await resume($)
 
   const ui = await band($, 'desktop')
-  expect(await ui.find({ type: 'Text', text: /^cache [█░]+ 50 \/ 60 min$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^cache [█░]+ 50 min$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /about 120k tokens of context/ })).toBeDefined()
   const p = await pane($)
-  expect(await p.find({ type: 'Text', text: /^50 \/ 60 min left$/ })).toBeDefined()
+  expect(await p.find({ type: 'Text', text: /^50 min left$/ })).toBeDefined()
   expect(await p.find({ type: 'Text', text: /Restored after a restart: about 120k tokens/ })).toBeDefined()
 })
 
@@ -817,7 +817,7 @@ test('a saved hit wins over the estimate', async ($, on) => {
   await resume($)
 
   const p = await pane($)
-  expect(await p.find({ type: 'Text', text: /^40 \/ 60 min left$/ })).toBeDefined()
+  expect(await p.find({ type: 'Text', text: /^40 min left$/ })).toBeDefined()
   expect(await p.find({ type: 'Text', text: /read 150k · wrote 2k/ })).toBeDefined()
 })
 

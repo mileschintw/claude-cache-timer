@@ -5,7 +5,7 @@
 A Claude Code mod that counts down your prompt cache TTL, warns you before it expires, and can compact the conversation just before it lapses, so you don't pay to re-cache a long context.
 
 ```
-cache ██████████████░░░░░░░░░░░░░░░░ 27:43 / 60:00  auto-compact off  [ Compact ] [ Pane ] [ Hide ]
+cache ██████████████░░░░░░░░░░░░░░░░ 28 min  auto-compact off  [ Compact ] [ Pane ] [ Hide ]
 Last read/write 32 min ago · read 182k · wrote 3k
 ```
 
@@ -19,7 +19,7 @@ On a long session that is a real cost, and nothing in the UI tells you when it i
 
 ## Features
 
-- **Countdown in the status line.** The time left shows in the status line, such as `Cache has 27 / 60 min left` (whole minutes until the last 5 minutes, then `mm:ss`), or `Cache expired`. On by default.
+- **Countdown in the status line.** The time left shows in the status line, such as `Cache has 27 min left` (whole minutes until the last 5 minutes, then `mm:ss`), or `Cache expired`. On by default.
 - **Optional countdown band above the prompt.** Off by default. A progress bar that goes from green to yellow to red, with the time left, the last read and write sizes, and buttons to compact, open the pane, or hide the band.
 - **`/cache` pane.** Shows the time left, this session's hit rate, expiries and compactions, and a sparkline of how much of each request the cache served. It also holds the settings.
 - **Reminders.** A toast 5 minutes before a 1h cache expires (1 minute before a 5m one), and another when it has expired.
