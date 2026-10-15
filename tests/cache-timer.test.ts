@@ -29,7 +29,8 @@ function world(on: On, settings?: Record<string, unknown>, store: Record<string,
     clock: mock.clock(on, { now: 1_000_000 }),
     usage: { read: 150_000, write: 2_000 },
     nowWrites: 0,
-    store: settings ? { ...store, settings } : { ...store },
+    // Most tests press the band, which is off by default.
+    store: { ...store, settings: settings ?? { isBandShown: true } },
   }
   on('store.get', (_$, e) => ({ value: w.store[e.key] }))
   on('store.set', (_$, e) => {
@@ -243,6 +244,48 @@ test('the status line is in Traditional Chinese with lang zh-TW', { options: { l
   await w.clock.advance(1000)
 
   expect(w.statuses.at(-1)).toBe('快取剩 60 / 60 分')
+})
+
+test('by default the status line shows the countdown and the band is off', async ($, on) => {
+  const w = world(on, {})
+  await start($)
+  await step($)
+  await w.clock.advance(1000)
+
+  expect(w.statuses.at(-1)).toBe('Cache has 60 / 60 min left')
+  expect(await (await band($, 'terminal')).find({ key: 'compact' })).toBeUndefined()
+
+  await (await pane($)).press({ key: 'band' })
+  expect(await (await band($, 'terminal')).find({ key: 'compact' })).toBeDefined()
+})
+
+test('the status line turns off and on from /cache and the pane', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await step($)
+  await w.clock.advance(1000)
+  expect(w.statuses.at(-1)).toBe('Cache has 60 / 60 min left')
+
+  expect((await cache($, 'status off')).text).toBe('Countdown in the status line: hidden')
+  await w.clock.advance(1000)
+  expect(w.statuses.at(-1)).toBeUndefined()
+
+  const count = w.statuses.length
+  await w.clock.advance(MIN)
+  expect(w.statuses).toHaveLength(count)
+
+  await (await pane($)).press({ key: 'status' })
+  await w.clock.advance(1000)
+  expect(w.statuses.at(-1)).toBe('Cache has 59 / 60 min left')
+})
+
+test('the status line stays off after a restart', async ($, on) => {
+  const w = world(on, { isStatusShown: false })
+  await start($)
+  await step($)
+  await w.clock.advance(MIN)
+
+  expect(w.statuses.every(t => t === undefined)).toBe(true)
 })
 
 test('no redraws before the first hit or after a compaction', async ($, on) => {

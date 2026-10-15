@@ -19,8 +19,8 @@ On a long session that is a real cost, and nothing in the UI tells you when it i
 
 ## Features
 
-- **Countdown band above the prompt.** A progress bar that goes from green to yellow to red, with the time left (whole minutes, such as `27 / 60 min`, until the last 5 minutes, then `mm:ss`), the last read and write sizes, and buttons to compact, open the pane, or hide the band.
-- **Countdown in the status line.** The time left also shows in the status line, such as `Cache has 27 / 60 min left`, or `Cache expired`.
+- **Countdown in the status line.** The time left shows in the status line, such as `Cache has 27 / 60 min left` (whole minutes until the last 5 minutes, then `mm:ss`), or `Cache expired`. On by default.
+- **Optional countdown band above the prompt.** Off by default. A progress bar that goes from green to yellow to red, with the time left, the last read and write sizes, and buttons to compact, open the pane, or hide the band.
 - **`/cache` pane.** Shows the time left, this session's hit rate, expiries and compactions, and a sparkline of how much of each request the cache served. It also holds the settings.
 - **Reminders.** A toast 5 minutes before a 1h cache expires (1 minute before a 5m one), and another when it has expired.
 - **Optional auto-compact.** Off by default. When on, it compacts the conversation 1, 2 or 5 minutes before expiry, while the cache is still warm.
@@ -64,14 +64,15 @@ Every session started after that loads the mod.
 
 ## Usage
 
-The band appears after your first message. Everything else lives in `/cache`:
+The countdown appears in the status line after your first message. Everything else lives in `/cache`:
 
 | Command | What it does |
 | --- | --- |
 | `/cache` | Open the pane. Where no pane can be placed, prints the same figures. |
 | `/cache auto on` / `off` | Turn auto-compact on or off |
 | `/cache ttl 5m` / `1h` | Set the TTL by hand |
-| `/cache band on` / `off` | Show or hide the band above the prompt |
+| `/cache status on` / `off` | Show or hide the countdown in the status line (on by default) |
+| `/cache band on` / `off` | Show or hide the band above the prompt (off by default) |
 | `/cache seconds on` / `off` | Show `mm:ss` the whole time instead of whole minutes until the last 5 minutes (off by default) |
 | `/cache lang en` / `zh-TW` | Switch the interface language |
 

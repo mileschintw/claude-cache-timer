@@ -21,7 +21,8 @@ const DEFAULTS: CacheSettings = {
   ttl: '1h',
   isAutoCompact: false,
   leadSeconds: 120,
-  isBandShown: true,
+  isBandShown: false,
+  isStatusShown: true,
   isSecondsShown: false,
   ttlSource: 'default',
   lang: 'en',
@@ -96,7 +97,7 @@ export const STRINGS = {
   en: {
     notifyTitle: 'Cache timer',
     bandPrefix: 'cache',
-    commandDescription: 'Prompt cache timer: open the pane, or auto on|off, ttl 5m|1h, band on|off, seconds on|off, lang en|zh-TW',
+    commandDescription: 'Prompt cache timer: open the pane, or auto on|off, ttl 5m|1h, band on|off, status on|off, seconds on|off, lang en|zh-TW',
     paneTitle: 'Prompt cache',
     on: 'on',
     off: 'off',
@@ -121,11 +122,12 @@ export const STRINGS = {
     autoReply: (onOff: string) => `Auto-compact before expiry: ${onOff}`,
     ttlReply: (ttl: string) => `Cache TTL set to ${ttl}`,
     bandReply: (shown: string) => `Band above the prompt: ${shown}`,
+    statusReply: (shown: string) => `Countdown in the status line: ${shown}`,
     secondsReply: (onOff: string) => `Always show seconds: ${onOff}`,
     langReply: 'Language set to English',
     compactFailed: (why: string) => `Compaction failed: ${why}`,
     alreadyCompacting: 'Already compacting the conversation',
-    usage: 'Usage: /cache [auto on|off] [ttl 5m|1h] [band on|off] [seconds on|off] [lang en|zh-TW]',
+    usage: 'Usage: /cache [auto on|off] [ttl 5m|1h] [band on|off] [status on|off] [seconds on|off] [lang en|zh-TW]',
     autoLabel: (onOff: string) => `auto-compact ${onOff}`,
     compactNow: 'Compact',
     pane: 'Pane',
@@ -153,6 +155,7 @@ export const STRINGS = {
     leadNote: (sec: number, min: string) =>
       `Compacts with ${sec}s left (at most 1 minute ahead on a 5m TTL); never auto-compacts under ${min} tokens of context.`,
     band: 'Band above the prompt',
+    statusLine: 'Countdown in the status line',
     seconds: 'Always show seconds',
     language: 'Language',
     compactConversation: 'Compact conversation now',
@@ -160,7 +163,7 @@ export const STRINGS = {
   'zh-TW': {
     notifyTitle: '快取計時器',
     bandPrefix: 'cache',
-    commandDescription: 'Prompt 快取計時器：開啟面板，或 auto on|off、ttl 5m|1h、band on|off、seconds on|off、lang en|zh-TW',
+    commandDescription: 'Prompt 快取計時器：開啟面板，或 auto on|off、ttl 5m|1h、band on|off、status on|off、seconds on|off、lang en|zh-TW',
     paneTitle: 'Prompt 快取',
     on: '開',
     off: '關',
@@ -185,11 +188,12 @@ export const STRINGS = {
     autoReply: (onOff: string) => `到期前自動壓縮：${onOff}`,
     ttlReply: (ttl: string) => `快取 TTL 設為 ${ttl}`,
     bandReply: (shown: string) => `提示框上方進度條：${shown}`,
+    statusReply: (shown: string) => `狀態列倒數：${shown}`,
     secondsReply: (onOff: string) => `永遠顯示秒數：${onOff}`,
     langReply: '介面語言已設為繁體中文',
     compactFailed: (why: string) => `壓縮失敗：${why}`,
     alreadyCompacting: '正在壓縮對話',
-    usage: '用法：/cache [auto on|off] [ttl 5m|1h] [band on|off] [seconds on|off] [lang en|zh-TW]',
+    usage: '用法：/cache [auto on|off] [ttl 5m|1h] [band on|off] [status on|off] [seconds on|off] [lang en|zh-TW]',
     autoLabel: (onOff: string) => `自動壓縮 ${onOff}`,
     compactNow: '立即壓縮',
     pane: '面板',
@@ -217,6 +221,7 @@ export const STRINGS = {
     leadNote: (sec: number, min: string) =>
       `實際在剩 ${sec} 秒時壓縮（5m TTL 最多提前 1 分鐘）；上下文不到 ${min} tokens 時不自動壓縮。`,
     band: '提示框上方進度條',
+    statusLine: '狀態列倒數',
     seconds: '永遠顯示秒數',
     language: '語言',
     compactConversation: '立即壓縮對話',
@@ -458,15 +463,15 @@ const shownAt = (s: CacheSettings, hit: CacheHit, t: number) => {
 let shownStatus: string | undefined
 
 /**
- * Keeps the countdown in the status line too, which stays visible where the
- * host hides the band (under the desktop app's dialogs and cards). Sets it only
- * when its text changes, and clears it while no cache is timed.
+ * Keeps the countdown in the status line, which stays visible where the host
+ * hides the band (under the desktop app's dialogs and cards). Sets it only when
+ * its text changes, and clears it while no cache is timed or it is turned off.
  */
 async function showStatus($: EngineInterface) {
   const hit = await read($, last)
+  const s = await read($, settings)
   let text: string | undefined
-  if (hit !== null) {
-    const s = await read($, settings)
+  if (hit !== null && s.isStatusShown) {
     const L: Strings = STRINGS[s.lang]
     const remaining = hit.at + ttlMs(s.ttl) - (await $.clock.now())
     text = remaining > 0 ? L.remainingHead(countdown(s.lang, remaining, ttlMs(s.ttl), s.isSecondsShown)) : L.expired
@@ -545,7 +550,7 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: 'cache',
       description: (await strings($)).commandDescription,
-      argumentHint: '[auto on|off] [ttl 5m|1h] [band on|off] [seconds on|off] [lang en|zh-TW]',
+      argumentHint: '[auto on|off] [ttl 5m|1h] [band on|off] [status on|off] [seconds on|off] [lang en|zh-TW]',
     })
 
     const isRestored = await restoreSession($)
@@ -671,6 +676,12 @@ export const register: Register = (on, options) => {
       await saveSettings($, s => ({ ...s, isBandShown: value === 'on' }))
 
       return { text: L.bandReply(value === 'on' ? L.shown : L.hidden) }
+    }
+
+    if (verb === 'status' && (value === 'on' || value === 'off')) {
+      await saveSettings($, s => ({ ...s, isStatusShown: value === 'on' }))
+
+      return { text: L.statusReply(value === 'on' ? L.shown : L.hidden) }
     }
 
     if (verb === 'seconds' && (value === 'on' || value === 'off')) {
@@ -817,6 +828,15 @@ export const register: Register = (on, options) => {
               label={s.isBandShown ? L.shown : L.hidden}
               variant={s.isBandShown ? 'primary' : 'secondary'}
               onPress={() => saveSettings($, x => ({ ...x, isBandShown: !x.isBandShown }))}
+            />
+          </Box>
+          <Box flexDirection="row" gap={1}>
+            <Text>{L.statusLine}</Text>
+            <Button
+              key="status"
+              label={s.isStatusShown ? L.shown : L.hidden}
+              variant={s.isStatusShown ? 'primary' : 'secondary'}
+              onPress={() => saveSettings($, x => ({ ...x, isStatusShown: !x.isStatusShown }))}
             />
           </Box>
           <Box flexDirection="row" gap={1}>
