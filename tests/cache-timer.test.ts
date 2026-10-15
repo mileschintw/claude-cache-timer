@@ -19,6 +19,8 @@ type World = {
   compactGate?: Promise<void>
   /** The mod's `$.store`, kept across a simulated restart. */
   store: Record<string, unknown>
+  /** Each `$.ui.open` argument, in order. */
+  opens: unknown[]
 }
 
 function world(on: On, settings?: Record<string, unknown>, store: Record<string, unknown> = {}): World {
@@ -31,6 +33,7 @@ function world(on: On, settings?: Record<string, unknown>, store: Record<string,
     nowWrites: 0,
     // Most tests press the band, which is off by default.
     store: { ...store, settings: settings ?? { isBandShown: true } },
+    opens: [],
   }
   on('store.get', (_$, e) => ({ value: w.store[e.key] }))
   on('store.set', (_$, e) => {
@@ -69,7 +72,11 @@ function world(on: On, settings?: Record<string, unknown>, store: Record<string,
 
     return { value: undefined }
   })
-  on('ui.open', () => ({ value: { isPlaced: true as const } }))
+  on('ui.open', (_$, e) => {
+    w.opens.push(e)
+
+    return { value: { isPlaced: true as const } }
+  })
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('ui.log', () => ({ value: undefined }))
   on('turn.complete', (_$, e) => ({ text: e.answer }))
@@ -135,6 +142,14 @@ const band = ($: Engine, surface: 'terminal' | 'desktop') =>
     component: 'AbovePrompt',
     props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 100 } as never,
   })
+
+/** The band's countdown reads `head`, with a block bar in the terminal and an SVG bar on desktop. */
+async function expectCountdown(ui: Awaited<ReturnType<typeof band>>, surface: 'terminal' | 'desktop', head: RegExp) {
+  expect(await ui.find({ type: 'Text', text: head })).toBeDefined()
+  if (surface === 'terminal') expect(await ui.find({ type: 'Text', text: /^[█░]+$/ })).toBeDefined()
+  else expect(await ui.find({ type: 'Svg' })).toBeDefined()
+}
+
 test('band counts down from the TTL after a cache hit', async ($, on) => {
   const w = world(on)
   await start($)
@@ -148,7 +163,7 @@ test('band counts down from the TTL after a cache hit', async ($, on) => {
       component: 'AbovePrompt',
       props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 100 } as never,
     })
-    expect(await ui.find({ type: 'Text', text: /^cache [█░]+ 60 min$/ })).toBeDefined()
+    await expectCountdown(ui, surface, /^60 min$/)
   }
 })
 
@@ -168,7 +183,7 @@ test('band and pane show minutes until 5 minutes are left, then mm:ss alone', { 
   await w.clock.advance(22 * MIN + 31_000)
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await band($, surface)
-    expect(await ui.find({ type: 'Text', text: /^cache [█░]+ 04:59$/ })).toBeDefined()
+    await expectCountdown(ui, surface, /^04:59$/)
   }
   expect(await p.find({ type: 'Text', text: /^04:59 left$/ })).toBeDefined()
 })
@@ -183,7 +198,7 @@ test('/cache seconds and the pane button switch to mm:ss the whole time', async 
   expect((await cache($, 'seconds on')).text).toBe('Always show seconds: on')
   expect(await p.find({ type: 'Text', text: /^60:00 left$/ })).toBeDefined()
 
-  await p.press({ key: 'seconds' })
+  await p.press({ key: 'seconds-false' })
   expect(await p.find({ type: 'Text', text: /^60 min left$/ })).toBeDefined()
 
   expect((await cache($, 'lang zh-TW')).text).toBe('介面語言已設為繁體中文')
@@ -219,10 +234,10 @@ test('the status line follows the countdown, says when it expired, and clears af
 
   await step($)
   await w.clock.advance(1000)
-  expect(w.statuses.at(-1)).toBe('Cache has 60 min left')
+  expect(w.statuses.at(-1)).toBe('cache ████████ 60 min left')
 
   await w.clock.advance(MIN)
-  expect(w.statuses.at(-1)).toBe('Cache has 59 min left')
+  expect(w.statuses.at(-1)).toBe('cache ████████ 59 min left')
 
   await w.clock.advance(60 * MIN)
   expect(w.statuses.at(-1)).toBe('Cache expired')
@@ -243,7 +258,7 @@ test('the status line is in Traditional Chinese with lang zh-TW', { options: { l
   await step($)
   await w.clock.advance(1000)
 
-  expect(w.statuses.at(-1)).toBe('快取剩 60 分鐘')
+  expect(w.statuses.at(-1)).toBe('快取 ████████ 剩 60 分鐘')
 })
 
 test('by default the status line shows the countdown and the band is off', async ($, on) => {
@@ -252,10 +267,10 @@ test('by default the status line shows the countdown and the band is off', async
   await step($)
   await w.clock.advance(1000)
 
-  expect(w.statuses.at(-1)).toBe('Cache has 60 min left')
+  expect(w.statuses.at(-1)).toBe('cache ████████ 60 min left')
   expect(await (await band($, 'terminal')).find({ key: 'compact' })).toBeUndefined()
 
-  await (await pane($)).press({ key: 'band' })
+  await (await pane($)).press({ key: 'band-true' })
   expect(await (await band($, 'terminal')).find({ key: 'compact' })).toBeDefined()
 })
 
@@ -264,7 +279,7 @@ test('the status line turns off and on from /cache and the pane', async ($, on) 
   await start($)
   await step($)
   await w.clock.advance(1000)
-  expect(w.statuses.at(-1)).toBe('Cache has 60 min left')
+  expect(w.statuses.at(-1)).toBe('cache ████████ 60 min left')
 
   expect((await cache($, 'status off')).text).toBe('Countdown in the status line: hidden')
   await w.clock.advance(1000)
@@ -274,9 +289,9 @@ test('the status line turns off and on from /cache and the pane', async ($, on) 
   await w.clock.advance(MIN)
   expect(w.statuses).toHaveLength(count)
 
-  await (await pane($)).press({ key: 'status' })
+  await (await pane($)).press({ key: 'status-true' })
   await w.clock.advance(1000)
-  expect(w.statuses.at(-1)).toBe('Cache has 59 min left')
+  expect(w.statuses.at(-1)).toBe('cache ████████ 59 min left')
 })
 
 test('the status line stays off after a restart', async ($, on) => {
@@ -587,7 +602,7 @@ test('a vetoed auto-compact says why', async ($, on) => {
   expect(w.toasts).toContain('Compaction skipped: a hook said no')
 })
 
-test('in a headless session the Compact buttons run /compact', async ($, on) => {
+test('in a headless session the Compact buttons run /compact, one at a time', async ($, on) => {
   const w = world(on)
   const runs: string[] = []
   on('command.run', { command: 'compact' }, (_$, e) => {
@@ -599,7 +614,15 @@ test('in a headless session the Compact buttons run /compact', async ($, on) => 
   await step($)
 
   await (await band($, 'desktop')).press({ key: 'compact' })
-  await (await pane($)).press({ key: 'compact-now' })
+  // `/compact` hasn't reported back: the button says it is compacting, and a press does nothing.
+  expect(await (await band($, 'desktop')).find({ type: 'Button', label: 'Compacting…' } as never)).toBeDefined()
+  const p = await pane($)
+  await p.press({ key: 'compact-now' })
+  expect(runs).toEqual(['compact'])
+
+  // Nothing ended it: after two minutes the buttons work again.
+  await w.clock.advance(2 * MIN + 1000)
+  await p.press({ key: 'compact-now' })
   expect(runs).toEqual(['compact', 'compact'])
   expect(w.toasts).toEqual([])
 })
@@ -717,7 +740,7 @@ test('after a restart the band and pane show the saved hit right away', async ($
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await band($, surface)
-    expect(await ui.find({ type: 'Text', text: /^cache [█░]+ 50 min$/ })).toBeDefined()
+    await expectCountdown(ui, surface, /^50 min$/)
   }
   const p = await pane($)
   expect(await p.find({ type: 'Text', text: /^50 min left$/ })).toBeDefined()
@@ -730,7 +753,7 @@ test('after a restart the status line shows the saved hit right away', async ($,
   const w = world(on, undefined, savedSession(1_000_000 - 10 * MIN))
   await start($)
 
-  expect(w.statuses.at(-1)).toBe('Cache has 50 min left')
+  expect(w.statuses.at(-1)).toBe('cache ███████░ 50 min left')
 })
 
 test('an unchanged status line is set again every 15 seconds, in case the first came too early', async ($, on) => {
@@ -804,8 +827,7 @@ test('a session saved before this version is estimated from the resume', async (
   await resume($)
 
   const ui = await band($, 'desktop')
-  expect(await ui.find({ type: 'Text', text: /^cache [█░]+ 50 min$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /about 120k tokens of context/ })).toBeDefined()
+  await expectCountdown(ui, 'desktop', /^50 min$/)
   const p = await pane($)
   expect(await p.find({ type: 'Text', text: /^50 min left$/ })).toBeDefined()
   expect(await p.find({ type: 'Text', text: /Restored after a restart: about 120k tokens/ })).toBeDefined()
@@ -838,4 +860,116 @@ test('/cache compact is gone: it prints the usage, and the native /compact does 
   expect(reply).toContain('Usage: /cache')
   expect(reply).not.toContain('compact]')
   expect(w.compactions).toBe(0)
+})
+
+const bandAt = ($: Engine, surface: 'terminal' | 'desktop', bodyColumns: number) =>
+  $.ui.mount({
+    plugin: 'cache-timer',
+    surface,
+    component: 'AbovePrompt',
+    props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns } as never,
+  })
+
+test('the band stays one row: parts drop as it narrows, and Compact always stays', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await step($)
+  await w.clock.advance(1000)
+
+  const wide = await bandAt($, 'terminal', 100)
+  expect(await wide.find({ type: 'Text', text: /^[█░]{10}$/ })).toBeDefined()
+  expect(await wide.find({ type: 'Text', text: /auto-compact off/ })).toBeDefined()
+  await wide.unmount()
+
+  const narrow = await bandAt($, 'terminal', 40)
+  expect(await narrow.find({ type: 'Text', text: /auto-compact/ })).toBeUndefined()
+  expect(await narrow.find({ key: 'pane' })).toBeDefined()
+  await narrow.unmount()
+
+  const narrower = await bandAt($, 'terminal', 25)
+  expect(await narrower.find({ key: 'pane' })).toBeUndefined()
+  await narrower.unmount()
+
+  const tiny = await bandAt($, 'terminal', 10)
+  expect(await tiny.find({ type: 'Text', text: /^[█░]+$/ })).toBeUndefined()
+  expect(await tiny.find({ key: 'compact' })).toBeDefined()
+  expect(await tiny.find({ type: 'Text', text: /^60 min$/ })).toBeDefined()
+})
+
+test('Compact reads Compacting… until the compaction ends, then the band says it compacted', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await step($)
+  let open!: () => void
+  w.compactGate = new Promise(resolve => (open = resolve))
+
+  await (await band($, 'desktop')).press({ key: 'compact' })
+  await w.clock.advance(10)
+  expect(await (await band($, 'desktop')).find({ type: 'Button', label: 'Compacting…' } as never)).toBeDefined()
+  expect(await (await pane($)).find({ type: 'Button', label: 'Compacting…' } as never)).toBeDefined()
+
+  open()
+  await w.clock.advance(10)
+  const after = await band($, 'desktop')
+  expect(await after.find({ type: 'Text', text: /^Compacted; the next message writes a fresh cache$/ })).toBeDefined()
+  expect(await after.find({ key: 'compact' })).toBeUndefined()
+})
+
+test('in a headless session Compact works again once /compact is skipped or refused', async ($, on) => {
+  const w = world(on)
+  let isRefused = false
+  on('command.run', { command: 'compact' }, async $$ => {
+    if (isRefused) throw new Error('no')
+    w.compactEnds = 'too small'
+    await $$.session.compact({ trigger: 'manual' } as never).catch(() => undefined)
+
+    return { text: 'skipped' }
+  })
+  await start($, false)
+  await step($)
+
+  await (await band($, 'desktop')).press({ key: 'compact' })
+  await w.clock.advance(10)
+  expect(await (await band($, 'desktop')).find({ type: 'Button', label: 'Compact' } as never)).toBeDefined()
+
+  isRefused = true
+  await (await band($, 'desktop')).press({ key: 'compact' })
+  await w.clock.advance(10)
+  expect(await (await band($, 'desktop')).find({ type: 'Button', label: 'Compact' } as never)).toBeDefined()
+})
+
+test('an expired band says how much the next message re-writes', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await step($)
+  await w.clock.advance(61 * MIN)
+
+  const ui = await band($, 'terminal')
+  expect(await ui.find({ type: 'Text', text: /^Cache expired$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /next message re-writes ~153k/ })).toBeDefined()
+  expect(await ui.find({ key: 'compact' })).toBeDefined()
+})
+
+test('the Pane button brings the pane forward', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await step($)
+  await w.clock.advance(1000)
+
+  await (await band($, 'terminal')).press({ key: 'pane' })
+  expect(w.opens).toEqual([expect.objectContaining({ id: 'cache-timer', focus: true })])
+})
+
+test('the pane marks the current value of every setting as primary', async ($, on) => {
+  world(on)
+  await start($)
+  await step($)
+
+  const p = await pane($)
+  expect(await p.find({ key: 'ttl-1h', variant: 'primary' } as never)).toBeDefined()
+  expect(await p.find({ key: 'ttl-5m', variant: 'secondary' } as never)).toBeDefined()
+  expect(await p.find({ key: 'auto-false', variant: 'primary' } as never)).toBeDefined()
+
+  await p.press({ key: 'auto-true' })
+  expect(await p.find({ key: 'auto-true', variant: 'primary' } as never)).toBeDefined()
 })

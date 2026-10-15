@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, ModelUsage, Register } from 'claude-code'
+import type { Elements, EngineInterface, ModelUsage, Register } from 'claude-code'
 
 import type { CacheAlert, CacheHit, CacheLang, CacheSettings, CacheStats, CacheTtl, SavedSession } from '../types'
 
@@ -34,6 +34,14 @@ const NO_STATS: CacheStats = { requests: 0, hits: 0, expiries: 0, compactions: 0
 const stats = atom({ plugin: 'cache-timer', key: 'stats' } as const, NO_STATS)
 const alert = atom({ plugin: 'cache-timer', key: 'alert' } as const, 'none')
 const now = atom({ plugin: 'cache-timer', key: 'now' } as const, 0)
+const compactingSince = atom({ plugin: 'cache-timer', key: 'compactingSince' } as const, 0)
+/** A compaction that has not ended after this long is shown as over, so Compact never stays stuck. */
+const COMPACTING_GIVE_UP_MS = 120_000
+/** Cells of the status line's bar. */
+const STATUS_BAR_CELLS = 8
+/** The band's bar is this wide at most, and dropped below the least. */
+const BAND_BAR_MAX = 10
+const BAND_BAR_MIN = 4
 
 export const ttlMs = (ttl: CacheTtl) => (ttl === '1h' ? 3_600_000 : 300_000)
 
@@ -86,6 +94,24 @@ export const contextOf = (hit: CacheHit) => hit.read + hit.write + hit.uncached
 
 const tone = (fraction: number) => (fraction > 0.5 ? 'success' : fraction > 0.15 ? 'warning' : 'error')
 
+/** Fixed colors for the SVG bar, which can't use theme keys: mid-tones that read on light and dark. */
+const SVG_TONE = { success: '#3fb950', warning: '#d29922', error: '#f85149' } as const
+const SVG_TRACK = '#8b949e55'
+/** CSS pixels the SVG bar takes per cell the text bar would. */
+const SVG_PX_PER_CELL = 10
+
+const isWide = (code: number) =>
+  (code >= 0x1100 && code <= 0x115f) ||
+  (code >= 0x2e80 && code <= 0xa4cf) ||
+  (code >= 0xac00 && code <= 0xd7a3) ||
+  (code >= 0xf900 && code <= 0xfaff) ||
+  (code >= 0xfe30 && code <= 0xfe4f) ||
+  (code >= 0xff00 && code <= 0xff60) ||
+  (code >= 0xffe0 && code <= 0xffe6)
+
+/** Terminal cells a string takes: East Asian wide characters take two. */
+export const cells = (text: string) => [...text].reduce((n, ch) => n + (isWide(ch.codePointAt(0) ?? 0) ? 2 : 1), 0)
+
 export const LANGS = ['en', 'zh-TW'] as const
 
 /** Canonical language for a typed or configured value, case-insensitive. */
@@ -132,9 +158,9 @@ export const STRINGS = {
     compactNow: 'Compact',
     pane: 'Pane',
     hide: 'Hide',
-    bandLast: (ago: string, r: string, w: string) => `Last read/write ${ago} · read ${r} · wrote ${w}`,
-    bandEstimated: (ago: string, tok: string) => `Last read/write ${ago} · about ${tok} tokens of context`,
-    bandRewrite: (tok: string) => ` · next message re-writes about ${tok} tokens`,
+    bandRewrite: (tok: string) => `next message re-writes ~${tok}`,
+    compacting: 'Compacting…',
+    statusHead: (b: string, c: string) => `cache ${b} ${c} left`,
     compactedHint: 'Compacted; the next message writes a fresh cache',
     noCacheHint: 'No cache yet; the timer starts after your first message',
     remaining: (c: string) => `${c} left`,
@@ -197,9 +223,9 @@ export const STRINGS = {
     compactNow: '立即壓縮',
     pane: '面板',
     hide: '隱藏',
-    bandLast: (ago: string, r: string, w: string) => `上次讀寫 ${ago} · 讀取 ${r} · 寫入 ${w}`,
-    bandEstimated: (ago: string, tok: string) => `上次讀寫 ${ago} · 上下文約 ${tok} tokens`,
-    bandRewrite: (tok: string) => ` · 下一則訊息會重新寫入約 ${tok} tokens`,
+    bandRewrite: (tok: string) => `下一則重寫約 ${tok}`,
+    compacting: '壓縮中…',
+    statusHead: (b: string, c: string) => `快取 ${b} 剩 ${c}`,
     compactedHint: '已壓縮，下一則訊息會寫入新的快取',
     noCacheHint: '還沒有快取，送出第一則訊息後開始計時',
     remaining: (c: string) => `剩餘 ${c}`,
@@ -319,8 +345,9 @@ async function summary($: EngineInterface) {
   ].join('\n')
 }
 
+/** The Pane buttons: opens the pane, or brings an open one forward. */
 async function openPane($: EngineInterface) {
-  const { isPlaced } = await $.ui.open({ id: PANE, title: (await strings($)).paneTitle })
+  const { isPlaced } = await $.ui.open({ id: PANE, title: (await strings($)).paneTitle, focus: true })
   if (!isPlaced) $.ui.toast(await summary($), { timeoutMs: 8000 })
 }
 
@@ -330,6 +357,7 @@ async function saveSettings($: EngineInterface, fn: (s: CacheSettings) => CacheS
 }
 
 async function markCompacted($: EngineInterface) {
+  await update($, compactingSince, () => 0)
   await update($, last, () => null)
   await update($, alert, (): CacheAlert => 'compacted')
   await update($, stats, st => ({ ...st, compactions: st.compactions + 1 }))
@@ -403,9 +431,17 @@ function debugLog($: EngineInterface, text: string) {
 async function compactNow($: EngineInterface): Promise<CompactOutcome> {
   if (isCompacting) return { kind: 'already' }
   isCompacting = true
+  const startedAt = await $.clock.now()
+  await update($, compactingSince, () => startedAt)
+  let isRan = false
 
   try {
-    if (isHeadless) return await compactByCommand($)
+    if (isHeadless) {
+      const ran = await compactByCommand($)
+      isRan = true
+
+      return ran
+    }
 
     const result = await $.session.compact()
 
@@ -422,6 +458,8 @@ async function compactNow($: EngineInterface): Promise<CompactOutcome> {
     return runningTurns.size > 0 ? { kind: 'busy' } : { kind: 'failed', reason: errorText(err) }
   } finally {
     isCompacting = false
+    // `/compact` may still be running; the session.compact hook, the turn's end or the give-up clears it.
+    if (!isRan) await update($, compactingSince, () => 0)
   }
 }
 
@@ -440,8 +478,12 @@ function pressCompact($: EngineInterface) {
   void compactAndReport($).catch(err => debugLog($, `compact press failed: ${errorText(err)}`))
 }
 
-/** Compacts, then says how it went, unless it compacted or `/compact` already said so. */
+/**
+ * Compacts, then says how it went, unless it compacted or `/compact` already
+ * said so. A press while a compaction runs does nothing: the button says so.
+ */
 async function compactAndReport($: EngineInterface) {
+  if ((await read($, compactingSince)) !== 0) return
   const outcome = await compactNow($)
   if (outcome.kind === 'compacted' || outcome.kind === 'ran') return
   $.ui.toast(outcomeText(await strings($), outcome))
@@ -486,7 +528,10 @@ async function showStatus($: EngineInterface) {
   if (hit !== null && s.isStatusShown) {
     const L: Strings = STRINGS[s.lang]
     const remaining = hit.at + ttlMs(s.ttl) - (await $.clock.now())
-    text = remaining > 0 ? L.remainingHead(countdown(s.lang, remaining, s.isSecondsShown)) : L.expired
+    text =
+      remaining > 0
+        ? L.statusHead(bar(remaining / ttlMs(s.ttl), STATUS_BAR_CELLS), countdown(s.lang, remaining, s.isSecondsShown))
+        : L.expired
   }
   const t = await $.clock.now()
   const resendMs = isRedrawn ? STATUS_REDRAWN_RESEND_MS : STATUS_RESEND_MS
@@ -506,6 +551,8 @@ async function showStatus($: EngineInterface) {
 async function tick($: EngineInterface) {
   await showStatus($)
   const t = await $.clock.now()
+  const since = await read($, compactingSince)
+  if (since !== 0 && !isCompacting && t - since > COMPACTING_GIVE_UP_MS) await update($, compactingSince, () => 0)
   const hit = await read($, last)
   if (hit === null) return
 
@@ -547,6 +594,90 @@ async function tick($: EngineInterface) {
     $.ui.toast(message, { timeoutMs: 8000 })
     void notify($, message)
   }
+}
+
+/** Cells a terminal button adds around its label: `[ label ]`. */
+const BUTTON_CHROME = 4
+
+/** The elements the bar draws with. */
+type MeterElements = {
+  Text: Elements['terminal']['Text']
+  Svg?: Elements['desktop']['Svg']
+}
+
+/**
+ * The time-left bar, `width` cells wide: block characters in the terminal, a
+ * rounded SVG bar on the other surfaces (the terminal's table has an `Svg` too,
+ * but it draws nothing).
+ */
+function meter(els: MeterElements, surface: string, fraction: number, width: number) {
+  const { Text, Svg } = els
+  const share = Math.min(1, Math.max(0, fraction))
+  const color = tone(fraction)
+
+  if (surface !== 'terminal' && Svg !== undefined) {
+    const px = width * SVG_PX_PER_CELL
+    const fill = Math.round(share * px)
+    const source =
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${px}" height="8" viewBox="0 0 ${px} 8">` +
+      `<rect width="${px}" height="8" rx="4" fill="${SVG_TRACK}"/>` +
+      `<rect width="${fill}" height="8" rx="4" fill="${SVG_TONE[color]}"/></svg>`
+
+    return <Svg source={source} alt={`${Math.round(share * 100)}%`} width={px} height={8} />
+  }
+
+  return <Text color={color}>{bar(share, width)}</Text>
+}
+
+/** One pane setting: its label and a button per value, the current one primary. */
+function settingRow<T extends string | number | boolean>(
+  els: { Box: Elements['terminal']['Box']; Text: Elements['terminal']['Text']; Button: Elements['terminal']['Button'] },
+  key: string,
+  label: string,
+  options: readonly { value: T; label: string }[],
+  current: T,
+  pick: (value: T) => unknown,
+) {
+  const { Box, Text, Button } = els
+
+  return (
+    <Box key={key} flexDirection="row" gap={1}>
+      <Text>{label}</Text>
+      {options.map(o => (
+        <Button
+          key={`${key}-${String(o.value)}`}
+          label={o.label}
+          variant={o.value === current ? 'primary' : 'secondary'}
+          onPress={() => void pick(o.value)}
+        />
+      ))}
+    </Box>
+  )
+}
+
+/** Cells each part of the band's row takes; `prefix` 0 when there is none. */
+export type BandWidths = { prefix: number; head: number; meta: number; compact: number; pane: number; hide: number; hasBar: boolean }
+
+/**
+ * What fits in the band's one row at `columns`. As it narrows, the bar shrinks
+ * to its least, then the meta text goes, then the prefix, then Pane, then the
+ * bar. The countdown, Compact and Hide always stay.
+ */
+export const bandLayout = (columns: number, w: BandWidths) => {
+  for (let level = 0; level <= 4; level++) {
+    const shown = { prefix: level < 2 && w.prefix > 0, meta: level < 1, pane: level < 3 }
+    const parts = [shown.prefix ? w.prefix : 0, w.head, shown.meta ? w.meta : 0, w.compact, shown.pane ? w.pane : 0, w.hide].filter(n => n > 0)
+    const fixed = parts.reduce((a, b) => a + b, 0) + parts.length - 1
+
+    if (level < 4 && w.hasBar) {
+      const barCells = Math.min(BAND_BAR_MAX, columns - fixed - 1)
+      if (barCells >= BAND_BAR_MIN) return { ...shown, barCells }
+    } else if (fixed <= columns || level === 4) {
+      return { ...shown, barCells: 0 }
+    }
+  }
+
+  return { prefix: false, meta: false, pane: false, barCells: 0 }
 }
 
 export const register: Register = (on, options) => {
@@ -630,6 +761,8 @@ export const register: Register = (on, options) => {
 
   on('turn.complete', async ($, e, next) => {
     runningTurns.delete(e.turnId)
+    // A `/compact` the mod ran (headless) ends with its turn.
+    if (!isCompacting) await update($, compactingSince, () => 0)
 
     return next(e)
   })
@@ -638,8 +771,10 @@ export const register: Register = (on, options) => {
   on('session.compact', async ($, e, next) => {
     const result = await next(e)
 
-    if (e.agentId === undefined && e.trigger !== 'precompute' && result.skip === undefined) {
-      await markCompacted($)
+    if (e.agentId === undefined && e.trigger !== 'precompute') {
+      // Only a `/compact` raises this; the mod's own `$.session.compact()` does not.
+      if (result.skip === undefined) await markCompacted($)
+      else await update($, compactingSince, () => 0)
     }
 
     return result
@@ -716,51 +851,90 @@ export const register: Register = (on, options) => {
     return { text: L.usage }
   })
 
+
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     // The next tick sets the status line again: this redraw may be the first the surface makes.
     isRedrawn = true
     const s = await read($, settings)
     const hit = await read($, last)
+    const state = await read($, alert)
 
-    if (e.props.hasSurvey || !s.isBandShown || hit === null) {
+    if (e.props.hasSurvey || !s.isBandShown || (hit === null && state !== 'compacted')) {
       return next(e)
     }
 
-    const { Box, Text, Button } = $.ui.resolve(e)
+    const els = $.ui.resolve(e)
+    const { Box, Text, Button } = els
     const L: Strings = STRINGS[s.lang]
+    const isTerminal = e.surface === 'terminal'
+    const hideLabel = isTerminal ? '✕' : L.hide
+    const hideBand = () => saveSettings($, x => ({ ...x, isBandShown: false }))
+    const hide = isTerminal ? (
+      <Button key="hide" label={hideLabel} plain dimColor onPress={hideBand} />
+    ) : (
+      <Button key="hide" label={hideLabel} role="dismiss" onPress={hideBand} />
+    )
+
+    if (hit === null) {
+      return (
+        <Box flexDirection="row" gap={1} flexWrap="nowrap">
+          <Text dimColor wrap="truncate">
+            {L.compactedHint}
+          </Text>
+          <Button key="pane" label={L.pane} dimColor onPress={() => openPane($)} />
+          {hide}
+        </Box>
+      )
+    }
+
     const t = await read($, now)
     const total = ttlMs(s.ttl)
     const remaining = hit.at + total - t
     const fraction = remaining / total
-    const width = Math.max(8, Math.min(30, e.props.bodyColumns - 60))
+    const isLive = remaining > 0
+    const head = isLive ? countdown(s.lang, remaining, s.isSecondsShown) : L.expired
+    const meta = isLive ? L.autoLabel(s.isAutoCompact ? L.on : L.off) : L.bandRewrite(tokens(contextOf(hit)))
+    const isCompactingNow = (await read($, compactingSince)) !== 0
+    const compactLabel = isCompactingNow ? L.compacting : L.compactNow
+    const layout = bandLayout(e.props.bodyColumns, {
+      prefix: isLive ? cells(L.bandPrefix) : 0,
+      head: cells(head),
+      meta: cells(`· ${meta}`),
+      compact: cells(compactLabel) + BUTTON_CHROME,
+      pane: cells(L.pane) + BUTTON_CHROME,
+      hide: isTerminal ? cells(hideLabel) : cells(hideLabel) + BUTTON_CHROME,
+      hasBar: isLive,
+    })
+    const color = isLive ? tone(fraction) : 'error'
 
     return (
-      <Box flexDirection="column">
-        <Box flexDirection="row" gap={1}>
-          {remaining > 0 ? (
-            <Text color={tone(fraction)}>
-              {L.bandPrefix} {bar(fraction, width)} {countdown(s.lang, remaining, s.isSecondsShown)}
-            </Text>
-          ) : (
-            <Text color="error">{L.expired}</Text>
-          )}
-          <Text dimColor>{L.autoLabel(s.isAutoCompact ? L.on : L.off)}</Text>
-          <Button key="compact" label={L.compactNow} onPress={() => pressCompact($)} />
-          <Button key="pane" label={L.pane} onPress={() => openPane($)} />
-          <Button key="hide" label={L.hide} dimColor onPress={() => saveSettings($, x => ({ ...x, isBandShown: false }))} />
-        </Box>
-        <Text dimColor>
-          {hit.isEstimated
-            ? L.bandEstimated(ago(L, t - hit.at), tokens(contextOf(hit)))
-            : L.bandLast(ago(L, t - hit.at), tokens(hit.read), tokens(hit.write))}
-          {remaining > 0 ? '' : L.bandRewrite(tokens(contextOf(hit)))}
+      <Box flexDirection="row" gap={1} flexWrap="nowrap">
+        {layout.prefix && isLive && <Text color={color}>{L.bandPrefix}</Text>}
+        {layout.barCells > 0 && meter(els, e.surface, fraction, layout.barCells)}
+        <Text color={color} wrap="truncate">
+          {head}
         </Text>
+        {layout.meta && (
+          <Text dimColor wrap="truncate">
+            · {meta}
+          </Text>
+        )}
+        <Button
+          key="compact"
+          label={compactLabel}
+          variant="primary"
+          dimColor={isCompactingNow}
+          onPress={() => pressCompact($)}
+        />
+        {layout.pane && <Button key="pane" label={L.pane} dimColor onPress={() => openPane($)} />}
+        {hide}
       </Box>
     )
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button } = $.ui.resolve(e)
+    const els = $.ui.resolve(e)
+    const { Box, Text, Button } = els
     const s = await read($, settings)
     const hit = await read($, last)
     const st = await read($, stats)
@@ -772,6 +946,15 @@ export const register: Register = (on, options) => {
     const fraction = remaining / total
     const width = Math.max(10, Math.min(40, e.props.bodyColumns - 4))
     const hitRate = st.requests === 0 ? '—' : `${Math.round((st.hits / st.requests) * 100)}%`
+    const isCompactingNow = (await read($, compactingSince)) !== 0
+    const onOff = [
+      { value: true, label: L.on },
+      { value: false, label: L.off },
+    ]
+    const shownHidden = [
+      { value: true, label: L.shown },
+      { value: false, label: L.hidden },
+    ]
 
     const headline =
       hit === null ? (
@@ -781,7 +964,7 @@ export const register: Register = (on, options) => {
           <Text bold color={tone(fraction)}>
             {L.remaining(countdown(s.lang, remaining, s.isSecondsShown))}
           </Text>
-          <Text color={tone(fraction)}>{bar(fraction, width)}</Text>
+          {meter(els, e.surface, fraction, width)}
         </Box>
       ) : (
         <Text bold color="error">
@@ -791,7 +974,18 @@ export const register: Register = (on, options) => {
 
     return (
       <Box flexDirection="column" gap={1}>
-        {headline}
+        <Box flexDirection="column" gap={1}>
+          {headline}
+          <Box flexDirection="row">
+            <Button
+              key="compact-now"
+              label={isCompactingNow ? L.compacting : L.compactConversation}
+              variant="primary"
+              dimColor={isCompactingNow}
+              onPress={() => pressCompact($)}
+            />
+          </Box>
+        </Box>
 
         {hit !== null && (
           <Box flexDirection="column">
@@ -813,73 +1007,31 @@ export const register: Register = (on, options) => {
 
         <Box flexDirection="column" gap={1}>
           <Text bold>{L.settings}</Text>
-          <Box flexDirection="row" gap={1}>
-            <Text>{L.ttlLabel(L.source[s.ttlSource])}</Text>
-            <Button key="ttl-5m" label="5m" variant={s.ttl === '5m' ? 'primary' : 'secondary'} onPress={() => saveSettings($, x => ({ ...x, ttl: '5m', ttlSource: 'manual' }))} />
-            <Button key="ttl-1h" label="1h" variant={s.ttl === '1h' ? 'primary' : 'secondary'} onPress={() => saveSettings($, x => ({ ...x, ttl: '1h', ttlSource: 'manual' }))} />
-          </Box>
-          <Box flexDirection="row" gap={1}>
-            <Text>{L.autoCompact}</Text>
-            <Button
-              key="auto"
-              label={s.isAutoCompact ? L.on : L.off}
-              variant={s.isAutoCompact ? 'primary' : 'secondary'}
-              onPress={() => saveSettings($, x => ({ ...x, isAutoCompact: !x.isAutoCompact }))}
-            />
-          </Box>
-          <Box flexDirection="row" gap={1}>
-            <Text>{L.lead}</Text>
-            {[60, 120, 300].map(sec => (
-              <Button
-                key={`lead-${sec}`}
-                label={L.minutes(sec / 60)}
-                variant={s.leadSeconds === sec ? 'primary' : 'secondary'}
-                onPress={() => saveSettings($, x => ({ ...x, leadSeconds: sec }))}
-              />
-            ))}
-          </Box>
+          {settingRow(els, 'ttl', L.ttlLabel(L.source[s.ttlSource]), [{ value: '5m', label: '5m' }, { value: '1h', label: '1h' }], s.ttl, ttl =>
+            saveSettings($, x => ({ ...x, ttl, ttlSource: 'manual' })),
+          )}
+          {settingRow(els, 'auto', L.autoCompact, onOff, s.isAutoCompact, v => saveSettings($, x => ({ ...x, isAutoCompact: v })))}
+          {settingRow(
+            els,
+            'lead',
+            L.lead,
+            [60, 120, 300].map(sec => ({ value: sec, label: L.minutes(sec / 60) })),
+            s.leadSeconds,
+            v => saveSettings($, x => ({ ...x, leadSeconds: v })),
+          )}
           <Text dimColor>{L.leadNote(Math.round(leadMs(s) / 1000), tokens(MIN_COMPACT_TOKENS))}</Text>
-          <Box flexDirection="row" gap={1}>
-            <Text>{L.band}</Text>
-            <Button
-              key="band"
-              label={s.isBandShown ? L.shown : L.hidden}
-              variant={s.isBandShown ? 'primary' : 'secondary'}
-              onPress={() => saveSettings($, x => ({ ...x, isBandShown: !x.isBandShown }))}
-            />
-          </Box>
-          <Box flexDirection="row" gap={1}>
-            <Text>{L.statusLine}</Text>
-            <Button
-              key="status"
-              label={s.isStatusShown ? L.shown : L.hidden}
-              variant={s.isStatusShown ? 'primary' : 'secondary'}
-              onPress={() => saveSettings($, x => ({ ...x, isStatusShown: !x.isStatusShown }))}
-            />
-          </Box>
-          <Box flexDirection="row" gap={1}>
-            <Text>{L.seconds}</Text>
-            <Button
-              key="seconds"
-              label={s.isSecondsShown ? L.on : L.off}
-              variant={s.isSecondsShown ? 'primary' : 'secondary'}
-              onPress={() => saveSettings($, x => ({ ...x, isSecondsShown: !x.isSecondsShown }))}
-            />
-          </Box>
-          <Box flexDirection="row" gap={1}>
-            <Text>{L.language}</Text>
-            {LANGS.map(lang => (
-              <Button
-                key={`lang-${lang}`}
-                label={LANG_LABEL[lang]}
-                variant={s.lang === lang ? 'primary' : 'secondary'}
-                onPress={() => saveSettings($, x => ({ ...x, lang }))}
-              />
-            ))}
-          </Box>
+          {settingRow(els, 'band', L.band, shownHidden, s.isBandShown, v => saveSettings($, x => ({ ...x, isBandShown: v })))}
+          {settingRow(els, 'status', L.statusLine, shownHidden, s.isStatusShown, v => saveSettings($, x => ({ ...x, isStatusShown: v })))}
+          {settingRow(els, 'seconds', L.seconds, onOff, s.isSecondsShown, v => saveSettings($, x => ({ ...x, isSecondsShown: v })))}
+          {settingRow(
+            els,
+            'lang',
+            L.language,
+            LANGS.map(lang => ({ value: lang, label: LANG_LABEL[lang] })),
+            s.lang,
+            lang => saveSettings($, x => ({ ...x, lang })),
+          )}
         </Box>
-
-        <Button key="compact-now" label={L.compactConversation} onPress={() => pressCompact($)} />
       </Box>
     )
   })

@@ -59,6 +59,8 @@ declare module 'claude-code' {
       stats: CacheStats
       alert: CacheAlert
       now: number
+      /** When the running compaction started, ms since the epoch; 0 while none runs. */
+      compactingSince: number
     }
   }
 }
