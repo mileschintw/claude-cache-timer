@@ -27,6 +27,6 @@ test('a 5m cache shows seconds the whole time', () => {
 })
 
 test('minutes are worded in Traditional Chinese', () => {
-  expect(countdown('zh-TW', 27 * MIN, false)).toBe('27 分')
+  expect(countdown('zh-TW', 27 * MIN, false)).toBe('27 分鐘')
   expect(countdown('zh-TW', 4 * MIN, false)).toBe('04:00')
 })

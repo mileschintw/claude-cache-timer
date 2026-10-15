@@ -215,7 +215,7 @@ export const STRINGS = {
     ttlLabel: (source: string) => `TTL（${source}）`,
     autoCompact: '到期前自動壓縮',
     lead: '提前',
-    minutes: (m: number) => `${m} 分`,
+    minutes: (m: number) => `${m} 分鐘`,
     leadNote: (sec: number, min: string) =>
       `實際在剩 ${sec} 秒時壓縮（5m TTL 最多提前 1 分鐘）；上下文不到 ${min} tokens 時不自動壓縮。`,
     band: '提示框上方進度條',

@@ -243,7 +243,7 @@ test('the status line is in Traditional Chinese with lang zh-TW', { options: { l
   await step($)
   await w.clock.advance(1000)
 
-  expect(w.statuses.at(-1)).toBe('快取剩 60 分')
+  expect(w.statuses.at(-1)).toBe('快取剩 60 分鐘')
 })
 
 test('by default the status line shows the countdown and the band is off', async ($, on) => {
@@ -470,7 +470,7 @@ test('lang zh-TW in userConfig draws in Traditional Chinese', { options: { lang:
   }
   const ui = await pane($)
   expect(await ui.find({ type: 'Text', text: /TTL（預設）/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^剩餘 60 分$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^剩餘 60 分鐘$/ })).toBeDefined()
 })
 
 test('lang zh-TW in userConfig reminds in Traditional Chinese', { options: { lang: 'zh-TW' } }, async ($, on) => {
