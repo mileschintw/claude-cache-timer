@@ -44,8 +44,8 @@ jobs:
           fi
 
   # Releases when a pushed commit carries a `Release: patch|minor|major`
-  # trailer: bumps the version, tags and releases it, then pins the
-  # marketplace entry to the new tag.
+  # trailer: bumps the version, tags and releases it, moves the release
+  # branch to it, then pins the marketplace entry to the new tag.
   release:
     needs: check
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -102,5 +102,6 @@ jobs:
           mv marketplace.json.tmp .claude-plugin/marketplace.json
           git commit -am "Pin the marketplace to cache-timer $VERSION"
 
-          git push --atomic origin HEAD:main "refs/tags/$TAG"
+          # The release branch follows the latest release for the plugin directory.
+          git push --atomic origin HEAD:main "refs/tags/$TAG" "$sha:refs/heads/release"
           gh release create "$TAG" --verify-tag --title "cache-timer $VERSION" --generate-notes

@@ -37,7 +37,7 @@ The value is `patch`, `minor` or `major`. A push with no such trailer releases n
 The release job in CI runs after the checks pass on a push to `main`. `.github/scripts/next-version.sh` reads the trailers and works out the next version. Then the job:
 
 - pushes a bot commit `Release cache-timer <version>` that sets `version`;
-- tags that commit `cache-timer--v<version>`;
+- tags that commit `cache-timer--v<version>` and moves the `release` branch to it, which the claude.ai plugin directory tracks;
 - pushes a second bot commit that re-pins the marketplace entry to the tag;
 - creates a GitHub release with generated notes.
 
@@ -45,7 +45,7 @@ Pull `main` afterwards.
 
 The trailers are read once, for the push that carries them. If the release job fails (for example `main` moved during the checks and its push was rejected), the request is not picked up later; retry with an empty commit that carries the trailer: `git commit --allow-empty -m "Retry the release" -m "Release: patch"`.
 
-Directory listing on claude.ai is a separate, manual submission and isn't part of CD.
+The directory listing on claude.ai is submitted by hand at claude.ai/directory/manage, tracking the `release` branch; after that, each release reaches it through that branch.
 
 ## Mod API pitfalls
 
