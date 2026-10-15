@@ -151,7 +151,7 @@ export const settingsOf = (saved: Partial<CacheSettings> & { isStatusShown?: unk
 export const STRINGS = {
   en: {
     notifyTitle: 'Cache timer',
-    bandPrefix: 'cache',
+    bandPrefix: 'Cache',
     commandDescription: 'Prompt cache timer: open the pane, or auto off|50k|100k|200k|500k, ahead 1m|2m|5m, ttl auto|5m|1h, band on|off, status off|time|bar, seconds on|off, lang en|zh-TW',
     paneTitle: 'Prompt cache',
     on: 'on',
@@ -217,7 +217,7 @@ export const STRINGS = {
   },
   'zh-TW': {
     notifyTitle: '快取計時器',
-    bandPrefix: 'cache',
+    bandPrefix: '快取',
     commandDescription: 'Prompt 快取計時器：開啟面板，或 auto off|50k|100k|200k|500k、ahead 1m|2m|5m、ttl auto|5m|1h、band on|off、status off|time|bar、seconds on|off、lang en|zh-TW',
     paneTitle: 'Prompt 快取',
     on: '開',

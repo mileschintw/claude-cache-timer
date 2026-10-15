@@ -20,7 +20,7 @@ Works in the Claude Code terminal and in the Claude desktop app's Code tab. Engl
 - **Native in the desktop app.** The desktop app draws the bar as a smooth rounded SVG bar; the terminal uses block characters:
 
   ```
-  cache █████░░░░░ 28 min · auto-compacts 2 min before expiry [ Compact ] [ Pane ] ✕
+  Cache █████░░░░░ 28 min · auto-compacts 2 min before expiry [ Compact ] [ Pane ] ✕
   ```
 
 ### Built-in auto-compact
