@@ -1031,24 +1031,32 @@ test('Compact reads Compacting… until the compaction ends, then the band says 
 test('in a headless session Compact works again once /compact is skipped or refused', async ($, on) => {
   const w = world(on)
   let isRefused = false
-  on('command.run', { command: 'compact' }, async $$ => {
+  // Stands in for core's /compact, which raises session.compact through the plugins. The
+  // test's own `$` does that; a hook's `$` (beneath the plugins) is refused the call. Core
+  // fills in the transcript; here the event carries it.
+  on('command.run', { command: 'compact' }, async () => {
     if (isRefused) throw new Error('no')
     w.compactEnds = 'too small'
-    await $$.session.compact({ trigger: 'manual' } as never).catch(() => undefined)
+    const messages = [{ role: 'user', text: 'hello', toolUses: [] }]
+    const { skip } = await $.session.compact({ trigger: 'manual', messages } as never)
 
-    return { text: 'skipped' }
+    return { text: `Compaction skipped: ${skip}` }
   })
   await start($, false)
   await step($)
 
   await (await band($, 'desktop')).press({ key: 'compact' })
   await w.clock.advance(10)
-  expect(await (await band($, 'desktop')).find({ type: 'Button', label: 'Compact' } as never)).toBeDefined()
+  expect((await (await band($, 'desktop')).find({ key: 'compact' }))?.props.label).toBe('Compact')
+  // /compact said it skipped; the mod adds nothing.
+  expect(w.toasts).toEqual([])
 
   isRefused = true
   await (await band($, 'desktop')).press({ key: 'compact' })
   await w.clock.advance(10)
-  expect(await (await band($, 'desktop')).find({ type: 'Button', label: 'Compact' } as never)).toBeDefined()
+  expect((await (await band($, 'desktop')).find({ key: 'compact' }))?.props.label).toBe('Compact')
+  expect(w.toasts).toHaveLength(1)
+  expect(w.toasts[0]).toMatch(/^Compaction failed: .+/)
 })
 
 test('an expired band says how much the next message re-writes', async ($, on) => {
