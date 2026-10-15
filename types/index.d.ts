@@ -61,6 +61,8 @@ declare module 'claude-code' {
       now: number
       /** When the running compaction started, ms since the epoch; 0 while none runs. */
       compactingSince: number
+      /** The pane is open and placed; the band's Pane button is lit and closes it. */
+      isPaneOpen: boolean
     }
   }
 }

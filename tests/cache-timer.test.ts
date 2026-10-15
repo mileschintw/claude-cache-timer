@@ -21,6 +21,10 @@ type World = {
   store: Record<string, unknown>
   /** Each `$.ui.open` argument, in order. */
   opens: unknown[]
+  /** Each closed pane id, in order. */
+  closes: string[]
+  /** The open panes, each with the title of its latest open. */
+  panes: Map<string, { id: string; title?: string }>
 }
 
 function world(on: On, settings?: Record<string, unknown>, store: Record<string, unknown> = {}): World {
@@ -31,9 +35,10 @@ function world(on: On, settings?: Record<string, unknown>, store: Record<string,
     clock: mock.clock(on, { now: 1_000_000 }),
     usage: { read: 150_000, write: 2_000 },
     nowWrites: 0,
-    // Most tests press the band, which is off by default.
     store: { ...store, settings: settings ?? { isBandShown: true } },
     opens: [],
+    closes: [],
+    panes: new Map(),
   }
   on('store.get', (_$, e) => ({ value: w.store[e.key] }))
   on('store.set', (_$, e) => {
@@ -74,12 +79,18 @@ function world(on: On, settings?: Record<string, unknown>, store: Record<string,
   })
   on('ui.open', (_$, e) => {
     w.opens.push(e)
+    w.panes.set(e.id, e)
 
     return { value: { isPlaced: true as const } }
   })
-  // The panes opened so far, each with the title of its latest open.
+  on('ui.close', (_$, e) => {
+    w.closes.push(e.id)
+    w.panes.delete(e.id)
+
+    return { value: undefined }
+  })
   on('ui.panes', () => ({
-    value: [...new Map(w.opens.map(o => [(o as { id: string }).id, o as { id: string; title?: string }])).values()].map(o => ({
+    value: [...w.panes.values()].map(o => ({
       id: o.id,
       title: o.title ?? o.id,
       isShown: true,
@@ -271,17 +282,25 @@ test('the status line is in Traditional Chinese with lang zh-TW', { options: { l
   expect(w.statuses.at(-1)).toBe('快取 ████████ 剩 60 分鐘')
 })
 
-test('by default the status line shows the countdown and the band is off', async ($, on) => {
+test('by default the status line shows the countdown and the band is on', async ($, on) => {
   const w = world(on, {})
   await start($)
   await step($)
   await w.clock.advance(1000)
 
   expect(w.statuses.at(-1)).toBe('cache ████████ 60 min left')
-  expect(await (await band($, 'terminal')).find({ key: 'compact' })).toBeUndefined()
-
-  await (await pane($)).press({ key: 'band-true' })
   expect(await (await band($, 'terminal')).find({ key: 'compact' })).toBeDefined()
+
+  await (await pane($)).press({ key: 'band-false' })
+  expect(await (await band($, 'terminal')).find({ key: 'compact' })).toBeUndefined()
+})
+
+test('a band turned off stays off after a restart', async ($, on) => {
+  world(on, { isBandShown: false })
+  await start($)
+  await step($)
+
+  expect(await (await band($, 'terminal')).find({ key: 'compact' })).toBeUndefined()
 })
 
 test('the status line turns off and on from /cache and the pane', async ($, on) => {
@@ -981,14 +1000,52 @@ test('an expired band says how much the next message re-writes', async ($, on) =
   expect(await ui.find({ key: 'compact' })).toBeDefined()
 })
 
-test('the Pane button brings the pane forward', async ($, on) => {
+test('the Pane button opens the pane and lights up, and a second press closes it', async ($, on) => {
   const w = world(on)
   await start($)
   await step($)
   await w.clock.advance(1000)
 
-  await (await band($, 'terminal')).press({ key: 'pane' })
-  expect(w.opens).toEqual([expect.objectContaining({ id: 'cache-timer', focus: true })])
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await band($, surface)
+    expect(await ui.find({ key: 'pane', variant: 'secondary' } as never)).toBeDefined()
+
+    await ui.press({ key: 'pane' })
+    expect(w.opens.at(-1)).toEqual(expect.objectContaining({ id: 'cache-timer', focus: true }))
+    expect(await ui.find({ key: 'pane', variant: 'primary' } as never)).toBeDefined()
+
+    await ui.press({ key: 'pane' })
+    expect(w.closes.at(-1)).toBe('cache-timer')
+    expect(w.panes.size).toBe(0)
+    expect(await ui.find({ key: 'pane', variant: 'secondary' } as never)).toBeDefined()
+  }
+})
+
+// The test engine can't raise a close by the person, so the `ui.close` hook is checked by hand.
+test('the Pane button is lit while /cache has the pane open, and closes it', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await step($)
+
+  await cache($, '')
+  const ui = await band($, 'desktop')
+  expect(await ui.find({ key: 'pane', variant: 'primary' } as never)).toBeDefined()
+
+  await ui.press({ key: 'pane' })
+  expect(w.panes.has('cache-timer')).toBe(false)
+  expect(await ui.find({ key: 'pane', variant: 'secondary' } as never)).toBeDefined()
+})
+
+test('a pane left open across a reload keeps the Pane button lit', async ($, on) => {
+  const w = world(on)
+  w.panes.set('cache-timer', { id: 'cache-timer', title: 'Prompt cache' })
+  await start($)
+  await step($)
+
+  const ui = await band($, 'desktop')
+  expect(await ui.find({ key: 'pane', variant: 'primary' } as never)).toBeDefined()
+  await ui.press({ key: 'pane' })
+  expect(w.closes).toEqual(['cache-timer'])
 })
 
 test('the pane marks the current value of every setting as primary', async ($, on) => {

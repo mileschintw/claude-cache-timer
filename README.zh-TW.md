@@ -16,7 +16,7 @@
 ### 簡潔好讀的進度條
 
 - **狀態列隨時可見**：例如 `快取 ████░░░░ 剩 27 分鐘`，預設開啟，不需要任何設定。
-- **提示框上方的一列（選用）**：進度條隨快取消耗從綠轉黃再轉紅，旁邊是剩餘時間、自動壓縮是否開啟，以及「立即壓縮」按鈕。視窗變窄時會先拿掉較不重要的部分，絕不換行。
+- **提示框上方的一列**：預設開啟，按一下就能隱藏。進度條隨快取消耗從綠轉黃再轉紅，旁邊是剩餘時間、自動壓縮是否開啟，以及「立即壓縮」按鈕。視窗變窄時會先拿掉較不重要的部分，絕不換行。
 - **桌面版原生質感**：桌面版用 SVG 畫成圓角長條，終端機則使用方塊字元：
 
   ```
@@ -72,7 +72,7 @@ git clone https://github.com/mileschintw/claude-cache-timer.git ~/.claude/mods/c
 ## 完整功能
 
 - **狀態列倒數**：剩 5 分鐘前只顯示分鐘，最後 5 分鐘顯示 `mm:ss`，過期後顯示 `快取已過期`。預設開啟。
-- **提示框上方的進度條**：預設關閉，用 `/cache band on` 開啟。快取過期後會顯示下一則訊息要重新寫入多少 tokens。
+- **提示框上方的進度條**：預設開啟，可以按它的 ✕（桌面版是「隱藏」）或用 `/cache band off` 隱藏。快取過期後會顯示下一則訊息要重新寫入多少 tokens。上面的「面板」按鈕會開啟 `/cache` 面板，面板開著時按鈕會亮起；再按一次就會關閉面板。
 - **`/cache` 面板**：剩餘時間和「立即壓縮」按鈕、上次讀寫了多少 tokens、本 session 的命中率、過期與壓縮次數，以及每次請求快取命中比例的迷你圖。所有設定也都在這裡，每一項是一排按鈕，目前的值會標示出來。
 
   <img src="docs/images/pane-desktop.png" alt="/cache 面板：剩餘時間、上次讀寫、本 session 統計與設定" width="400">
@@ -93,7 +93,7 @@ git clone https://github.com/mileschintw/claude-cache-timer.git ~/.claude/mods/c
 | `/cache auto on` / `off` | 開啟或關閉自動壓縮 |
 | `/cache ttl 5m` / `1h` | 手動設定 TTL |
 | `/cache status on` / `off` | 顯示或隱藏狀態列倒數（預設開） |
-| `/cache band on` / `off` | 顯示或隱藏提示框上方的進度條（預設關） |
+| `/cache band on` / `off` | 顯示或隱藏提示框上方的進度條（預設開） |
 | `/cache seconds on` / `off` | 一律顯示 `mm:ss`，不在剩 5 分鐘前只顯示分鐘（預設關） |
 | `/cache lang en` / `zh-TW` | 切換介面語言 |
 
@@ -122,7 +122,7 @@ git clone https://github.com/mileschintw/claude-cache-timer.git ~/.claude/mods/c
 - **資料不會離開你的電腦**：這個 mod 不發出任何網路請求。每次模型回應，它只讀取 token 數（快取讀取、快取寫入、未快取的輸入），不讀內容。程式裡的 `http://www.w3.org/2000/svg` 是進度條 SVG 的命名空間，不是它會連線的位址；它也不讀取任何憑證或環境變數。
 - **通知**：它的輸出都在畫面上：狀態列、進度條、面板，以及到期提醒。提醒以 app 內的 toast 顯示，在終端機還會發出系統通知，內容只有提醒文字和 token 數。
 - **會執行的指令**：在桌面版，以及 SDK 或 `-p` 的 session 中，「立即壓縮」按鈕和自動壓縮會執行 `/compact`，也只會執行這個指令：在你按下按鈕時，或開啟自動壓縮後、Claude 閒置且快取即將過期時。在終端機則改用 Claude Code 本身的壓縮功能。
-- **Hooks**：它監聽 `turn.start`、`turn.step`、`turn.complete`、`session.start`、`session.compact`、恢復 session 與切換模型的事件，以及 `AbovePrompt` 區塊。每個事件都原封不動地往下傳，它只讀取 token 數、回報的快取 TTL，以及是否發生壓縮。
+- **Hooks**：它監聽 `turn.start`、`turn.step`、`turn.complete`、`session.start`、`session.compact`、`ui.close`（得知面板已關閉）、恢復 session 與切換模型的事件，以及 `AbovePrompt` 區塊。每個事件都原封不動地往下傳，它只讀取 token 數、回報的快取 TTL，以及是否發生壓縮。
 - **儲存的資料**：設定，以及最近 20 個 session 的計時與統計，存在 Claude Code 本機的 plugin 儲存空間。
 
 `.github/` 資料夾是這個 repo 用來發版的 CI，不屬於執行中的 plugin。

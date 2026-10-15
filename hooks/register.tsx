@@ -21,7 +21,7 @@ const DEFAULTS: CacheSettings = {
   ttl: '1h',
   isAutoCompact: false,
   leadSeconds: 120,
-  isBandShown: false,
+  isBandShown: true,
   isStatusShown: true,
   isSecondsShown: false,
   ttlSource: 'default',
@@ -35,6 +35,7 @@ const stats = atom({ plugin: 'cache-timer', key: 'stats' } as const, NO_STATS)
 const alert = atom({ plugin: 'cache-timer', key: 'alert' } as const, 'none')
 const now = atom({ plugin: 'cache-timer', key: 'now' } as const, 0)
 const compactingSince = atom({ plugin: 'cache-timer', key: 'compactingSince' } as const, 0)
+const isPaneOpen = atom({ plugin: 'cache-timer', key: 'isPaneOpen' } as const, false)
 /** A compaction that has not ended after this long is shown as over, so Compact never stays stuck. */
 const COMPACTING_GIVE_UP_MS = 120_000
 /** Cells of the status line's bar. */
@@ -313,10 +314,13 @@ const outcomeText = (L: Strings, o: CompactNotice) => {
 
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err)) || 'unknown error'
 
+/** `$.ui.notify`, which the engine has but its shipped declarations leave out. */
+type Notifier = { notify: (text: string, options?: { title?: string }) => Promise<unknown> }
+
 /** A native notification where the surface has one; the toast is the reminder everywhere. */
 async function notify($: EngineInterface, text: string) {
   try {
-    await $.ui.notify(text, { title: (await strings($)).notifyTitle })
+    await ($.ui as EngineInterface['ui'] & Notifier).notify(text, { title: (await strings($)).notifyTitle })
   } catch {
     // No notification channel on this surface.
   }
@@ -345,10 +349,26 @@ async function summary($: EngineInterface) {
   ].join('\n')
 }
 
-/** The Pane buttons: opens the pane, or brings an open one forward. */
-async function openPane($: EngineInterface) {
-  const { isPlaced } = await $.ui.open({ id: PANE, title: (await strings($)).paneTitle, focus: true })
-  if (!isPlaced) $.ui.toast(await summary($), { timeoutMs: 8000 })
+/** Opens the pane; a surface that places none gets the summary as a toast. */
+async function openPane($: EngineInterface, isFocused: boolean) {
+  // `/cache` leaves `focus` out: the host refuses any `focus` value from a command.
+  const title = (await strings($)).paneTitle
+  const { isPlaced } = await $.ui.open(isFocused ? { id: PANE, title, focus: true } : { id: PANE, title })
+  await update($, isPaneOpen, () => isPlaced)
+
+  return isPlaced
+}
+
+/** The band's Pane button: opens the pane, or closes it while it is open. */
+async function togglePane($: EngineInterface) {
+  if (await read($, isPaneOpen)) {
+    await $.ui.close({ id: PANE })
+    await update($, isPaneOpen, () => false)
+
+    return
+  }
+
+  if (!(await openPane($, true))) $.ui.toast(await summary($), { timeoutMs: 8000 })
 }
 
 async function saveSettings($: EngineInterface, fn: (s: CacheSettings) => CacheSettings) {
@@ -709,6 +729,10 @@ export const register: Register = (on, options) => {
       argumentHint: '[auto on|off] [ttl 5m|1h] [band on|off] [status on|off] [seconds on|off] [lang en|zh-TW]',
     })
 
+    // A pane can outlive a reload of the module; the engine's list says whether it is up.
+    const isUp = (await $.ui.panes()).some(pane => pane.id === PANE && pane.isPlaced)
+    await update($, isPaneOpen, () => isUp)
+
     const isRestored = await restoreSession($)
     debugLog($, `session ${await $.session.id()} started, saved hit ${isRestored ? 'restored' : 'not found'}`)
     await pruneSessions($)
@@ -801,6 +825,14 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
+  // Any close of the pane (the Pane button, its own close mark or key, an unload) unlights the button.
+  on('ui.close', async ($, e, next) => {
+    const result = await next(e)
+    if (e.id === PANE) await update($, isPaneOpen, () => false)
+
+    return result
+  })
+
   // A model switch reports the TTL the session's cache uses.
   on('classic.PostModelSwitch', async ($, e, next) => {
     const ttl = e.cache_ttl
@@ -815,9 +847,7 @@ export const register: Register = (on, options) => {
     const L = await strings($)
 
     if (verb === undefined) {
-      const { isPlaced } = await $.ui.open({ id: PANE, title: L.paneTitle })
-
-      return { text: isPlaced ? L.paneOpened : await summary($) }
+      return { text: (await openPane($, false)) ? L.paneOpened : await summary($) }
     }
 
     if (verb === 'auto' && (value === 'on' || value === 'off')) {
@@ -876,6 +906,16 @@ export const register: Register = (on, options) => {
     const { Box, Text, Button } = els
     const L: Strings = STRINGS[s.lang]
     const isTerminal = e.surface === 'terminal'
+    const isPaneUp = await read($, isPaneOpen)
+    const paneButton = (
+      <Button
+        key="pane"
+        label={L.pane}
+        variant={isPaneUp ? 'primary' : 'secondary'}
+        dimColor={!isPaneUp}
+        onPress={() => togglePane($)}
+      />
+    )
     const hideLabel = isTerminal ? '✕' : L.hide
     const hideBand = () => saveSettings($, x => ({ ...x, isBandShown: false }))
     const hide = isTerminal ? (
@@ -890,7 +930,7 @@ export const register: Register = (on, options) => {
           <Text dimColor wrap="truncate">
             {L.compactedHint}
           </Text>
-          <Button key="pane" label={L.pane} dimColor onPress={() => openPane($)} />
+          {paneButton}
           {hide}
         </Box>
       )
@@ -935,7 +975,7 @@ export const register: Register = (on, options) => {
           dimColor={isCompactingNow}
           onPress={() => pressCompact($)}
         />
-        {layout.pane && <Button key="pane" label={L.pane} dimColor onPress={() => openPane($)} />}
+        {layout.pane && paneButton}
         {hide}
       </Box>
     )
