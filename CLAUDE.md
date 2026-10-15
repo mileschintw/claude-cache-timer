@@ -50,6 +50,7 @@ The directory listing on claude.ai is submitted by hand at claude.ai/directory/m
 ## Mod API pitfalls
 
 - A helper that takes `$` must be a top-level `function` declaration, or validation fails.
+- Write every `$` call plainly as `$.noun.method(...)`: no cast, parentheses, `!` or `?.` around its parts. The plugin directory checks the source as written and blocks anything else. For a call the shipped types lack (`$.ui.notify`), put `// @ts-expect-error` on the line above.
 - A render hook must not write state. Write state only in event hooks and button handlers.
 - When the mod calls `$.session.compact()` itself, its own `session.compact` hook doesn't fire, so `compactNow` calls `markCompacted` itself.
 - `$.session.compact()` rejects while a turn is running, and resolves `{ skip }` when vetoed.

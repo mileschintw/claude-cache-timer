@@ -314,13 +314,11 @@ const outcomeText = (L: Strings, o: CompactNotice) => {
 
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err)) || 'unknown error'
 
-/** `$.ui.notify`, which the engine has but its shipped declarations leave out. */
-type Notifier = { notify: (text: string, options?: { title?: string }) => Promise<unknown> }
-
 /** A native notification where the surface has one; the toast is the reminder everywhere. */
 async function notify($: EngineInterface, text: string) {
   try {
-    await ($.ui as EngineInterface['ui'] & Notifier).notify(text, { title: (await strings($)).notifyTitle })
+    // @ts-expect-error The engine has `$.ui.notify`, but its shipped declarations leave it out.
+    await $.ui.notify(text, { title: (await strings($)).notifyTitle })
   } catch {
     // No notification channel on this surface.
   }
