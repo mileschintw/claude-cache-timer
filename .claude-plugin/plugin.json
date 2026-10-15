@@ -1,6 +1,6 @@
 {
   "name": "cache-timer",
-  "version": "0.4.5",
+  "version": "0.5.0",
   "description": "Prompt cache countdown and auto-compact for Claude Code: a progress bar in the status line and above the prompt, a /cache pane with stats, expiry reminders, and compaction before the cache expires so you don't pay to re-cache a long context",
   "author": { "name": "mileschintw", "url": "https://github.com/mileschintw" },
   "homepage": "https://github.com/mileschintw/claude-cache-timer",
