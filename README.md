@@ -117,6 +117,16 @@ The latest change wins. A language picked in the pane or with `/cache lang` is s
 - **Compacting in the desktop app.** The desktop app (and any SDK or `-p` session) can't compact from a mod directly, so the Compact buttons run `/compact` there, which shows its own result in the transcript.
 - **Resets.** Any compaction, whether `/compact`, Claude Code's own auto-compact, or this mod's, replaces the cached prefix. The timer then waits for the next message.
 
+## Privacy and permissions
+
+- **Nothing leaves your machine.** The mod makes no network requests. Of each model response it reads only the token counts (cache read, cache write, uncached input), never the text. The `http://www.w3.org/2000/svg` in the code is the SVG namespace of the bar, not an address it calls, and the mod reads no credentials or environment variables.
+- **Notifications.** Its only output is on screen: the status line, the band, the pane, and the expiry reminders, shown as in-app toasts and, in the terminal, as a system notification. They carry the reminder text and token counts, nothing else.
+- **The command it runs.** In the desktop app and in SDK or `-p` sessions, the Compact buttons and auto-compact run `/compact`, and only `/compact`: when you press a button, or, with auto-compact on, when Claude is idle shortly before the cache expires. In the terminal it compacts through Claude Code's own compaction call instead.
+- **Hooks.** It watches `turn.start`, `turn.step`, `turn.complete`, `session.start`, `session.compact`, the resume and model-switch events, and the `AbovePrompt` slot. It passes every event on unchanged; it only reads the token counts, the reported cache TTL, and whether a compaction happened.
+- **Stored data.** Its settings, and the timer and stats of the 20 most recent sessions, are kept in Claude Code's local plugin store.
+
+The `.github/` folder is this repository's CI, which releases new versions. It isn't part of the plugin at run time.
+
 ## Limitations
 
 - **No system notifications in the desktop app.** There, reminders are in-app toasts only. If you have walked away from the window, you won't see them.

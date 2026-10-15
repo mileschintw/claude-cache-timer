@@ -117,6 +117,16 @@ git clone https://github.com/mileschintw/claude-cache-timer.git ~/.claude/mods/c
 - **桌面版的壓縮**：桌面版（以及 SDK 或 `-p` 的 session）不允許 mod 直接壓縮，所以在那裡按壓縮按鈕會執行 `/compact`，結果會顯示在對話紀錄裡。
 - **重新計時**：任何壓縮（`/compact`、Claude Code 內建的自動壓縮，或這個 mod 觸發的）都會取代原本的快取內容，計時器會等到下一則訊息再開始。
 
+## 隱私與權限
+
+- **資料不會離開你的電腦**：這個 mod 不發出任何網路請求。每次模型回應，它只讀取 token 數（快取讀取、快取寫入、未快取的輸入），不讀內容。程式裡的 `http://www.w3.org/2000/svg` 是進度條 SVG 的命名空間，不是它會連線的位址；它也不讀取任何憑證或環境變數。
+- **通知**：它的輸出都在畫面上：狀態列、進度條、面板，以及到期提醒。提醒以 app 內的 toast 顯示，在終端機還會發出系統通知，內容只有提醒文字和 token 數。
+- **會執行的指令**：在桌面版，以及 SDK 或 `-p` 的 session 中，「立即壓縮」按鈕和自動壓縮會執行 `/compact`，也只會執行這個指令：在你按下按鈕時，或開啟自動壓縮後、Claude 閒置且快取即將過期時。在終端機則改用 Claude Code 本身的壓縮功能。
+- **Hooks**：它監聽 `turn.start`、`turn.step`、`turn.complete`、`session.start`、`session.compact`、恢復 session 與切換模型的事件，以及 `AbovePrompt` 區塊。每個事件都原封不動地往下傳，它只讀取 token 數、回報的快取 TTL，以及是否發生壓縮。
+- **儲存的資料**：設定，以及最近 20 個 session 的計時與統計，存在 Claude Code 本機的 plugin 儲存空間。
+
+`.github/` 資料夾是這個 repo 用來發版的 CI，不屬於執行中的 plugin。
+
 ## 限制
 
 - **桌面版沒有系統通知**：在桌面版裡，提醒只會以 app 內的 toast 顯示；如果你不在視窗前，就不會看到。
