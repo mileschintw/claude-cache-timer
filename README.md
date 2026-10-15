@@ -7,7 +7,7 @@
 
 **A prompt cache countdown and auto-compact for Claude Code. See how long your cache stays warm, and compact before it expires instead of paying to re-cache a long context.**
 
-![The cache-timer band above the prompt in the Claude desktop app, with the status line countdown below](docs/images/band-desktop.png)
+![The cache-timer band above the prompt in the Claude desktop app, with the status line countdown next to the model picker below the prompt](docs/images/band-desktop.png)
 
 Works in the Claude Code terminal and in the Claude desktop app's Code tab. English and Traditional Chinese interface.
 

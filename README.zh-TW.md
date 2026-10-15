@@ -7,7 +7,7 @@
 
 **Claude Code 的 prompt 快取倒數與自動壓縮：一眼看出快取還剩多久，趁過期前先壓縮對話，不必花錢把一長段上下文重新寫進快取。**
 
-![Claude 桌面版提示框上方的 cache-timer 進度條，下方是狀態列倒數](docs/images/band-desktop.png)
+![Claude 桌面版提示框上方的 cache-timer 進度條，提示框下方的模型選單旁是狀態列倒數](docs/images/band-desktop.png)
 
 支援 Claude Code 終端機，以及 Claude 桌面版的 Code 分頁。介面有英文與繁體中文。
 
