@@ -75,7 +75,7 @@ git clone https://github.com/mileschintw/claude-cache-timer.git ~/.claude/mods/c
 - **提示框上方的進度條**：預設關閉，用 `/cache band on` 開啟。快取過期後會顯示下一則訊息要重新寫入多少 tokens。
 - **`/cache` 面板**：剩餘時間和「立即壓縮」按鈕、上次讀寫了多少 tokens、本 session 的命中率、過期與壓縮次數，以及每次請求快取命中比例的迷你圖。所有設定也都在這裡，每一項是一排按鈕，目前的值會標示出來。
 
-  <img src="docs/images/pane-desktop.png" alt="/cache 面板：剩餘時間、上次讀寫、本 session 統計與設定" width="320">
+  <img src="docs/images/pane-desktop.png" alt="/cache 面板：剩餘時間、上次讀寫、本 session 統計與設定" width="400">
 - **到期提醒**：1h 快取在過期前 5 分鐘提醒（5m 快取是前 1 分鐘），過期時再提醒一次。
 - **自動壓縮**：預設關閉。在過期前 1、2 或 5 分鐘、快取還有效時壓縮對話。
 - **一鍵壓縮**：在進度條或面板按按鈕。壓縮進行中按鈕會顯示「壓縮中…」，完成後進度條會提示下一則訊息會寫入新的快取。
