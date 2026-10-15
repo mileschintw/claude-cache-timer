@@ -255,13 +255,13 @@ test('the status line follows the countdown, says when it expired, and clears af
 
   await step($)
   await w.clock.advance(1000)
-  expect(w.statuses.at(-1)).toBe('cache ████████ 60 min left')
+  expect(w.statuses.at(-1)).toBe('████████ 60 min left')
 
   await w.clock.advance(MIN)
-  expect(w.statuses.at(-1)).toBe('cache ████████ 59 min left')
+  expect(w.statuses.at(-1)).toBe('████████ 59 min left')
 
   await w.clock.advance(60 * MIN)
-  expect(w.statuses.at(-1)).toBe('Cache expired')
+  expect(w.statuses.at(-1)).toBe('expired')
 
   const count = w.statuses.length
   await w.clock.advance(5000)
@@ -279,7 +279,7 @@ test('the status line is in Traditional Chinese with lang zh-TW', { options: { l
   await step($)
   await w.clock.advance(1000)
 
-  expect(w.statuses.at(-1)).toBe('快取 ████████ 剩 60 分鐘')
+  expect(w.statuses.at(-1)).toBe('████████ 剩 60 分鐘')
 })
 
 test('by default the status line shows the countdown and the band is on', async ($, on) => {
@@ -288,7 +288,7 @@ test('by default the status line shows the countdown and the band is on', async 
   await step($)
   await w.clock.advance(1000)
 
-  expect(w.statuses.at(-1)).toBe('cache ████████ 60 min left')
+  expect(w.statuses.at(-1)).toBe('████████ 60 min left')
   expect(await (await band($, 'terminal')).find({ key: 'compact' })).toBeDefined()
 
   await (await pane($)).press({ key: 'band-false' })
@@ -303,14 +303,14 @@ test('a band turned off stays off after a restart', async ($, on) => {
   expect(await (await band($, 'terminal')).find({ key: 'compact' })).toBeUndefined()
 })
 
-test('the status line turns off and on from /cache and the pane', async ($, on) => {
+test('the status line switches between off, time and bar from /cache and the pane', async ($, on) => {
   const w = world(on)
   await start($)
   await step($)
   await w.clock.advance(1000)
-  expect(w.statuses.at(-1)).toBe('cache ████████ 60 min left')
+  expect(w.statuses.at(-1)).toBe('████████ 60 min left')
 
-  expect((await cache($, 'status off')).text).toBe('Countdown in the status line: hidden')
+  expect((await cache($, 'status off')).text).toBe('Status line: off')
   await w.clock.advance(1000)
   expect(w.statuses.at(-1)).toBeUndefined()
 
@@ -318,18 +318,36 @@ test('the status line turns off and on from /cache and the pane', async ($, on) 
   await w.clock.advance(MIN)
   expect(w.statuses).toHaveLength(count)
 
-  await (await pane($)).press({ key: 'status-true' })
+  expect((await cache($, 'status time')).text).toBe('Status line: time')
   await w.clock.advance(1000)
-  expect(w.statuses.at(-1)).toBe('cache ████████ 59 min left')
+  expect(w.statuses.at(-1)).toBe('59 min left')
+
+  await (await pane($)).press({ key: 'status-bar' })
+  await w.clock.advance(1000)
+  expect(w.statuses.at(-1)).toBe('████████ 59 min left')
+
+  await cache($, 'status off')
+  expect((await cache($, 'status on')).text).toBe('Status line: bar + time')
 })
 
 test('the status line stays off after a restart', async ($, on) => {
+  const w = world(on, { status: 'off' })
+  await start($)
+  await step($)
+  await w.clock.advance(MIN)
+
+  expect(w.statuses.every(t => t === undefined)).toBe(true)
+})
+
+test('a status line turned off before it had three modes stays off', async ($, on) => {
   const w = world(on, { isStatusShown: false })
   await start($)
   await step($)
   await w.clock.advance(MIN)
 
   expect(w.statuses.every(t => t === undefined)).toBe(true)
+  expect(w.store.settings).toMatchObject({ status: 'off' })
+  expect(w.store.settings).not.toHaveProperty('isStatusShown')
 })
 
 test('no redraws before the first hit or after a compaction', async ($, on) => {
@@ -800,30 +818,30 @@ test('after a restart the status line shows the saved hit right away', async ($,
   const w = world(on, undefined, savedSession(1_000_000 - 10 * MIN))
   await start($)
 
-  expect(w.statuses.at(-1)).toBe('cache ███████░ 50 min left')
+  expect(w.statuses.at(-1)).toBe('███████░ 50 min left')
 })
 
 test('an unchanged status line is set again every 15 seconds, in case the first came too early', async ($, on) => {
   const w = world(on, undefined, savedSession(1_000_000 - 70 * MIN))
   await start($)
-  expect(w.statuses).toEqual(['Cache expired'])
+  expect(w.statuses).toEqual(['expired'])
 
   await w.clock.advance(14_000)
-  expect(w.statuses).toEqual(['Cache expired'])
+  expect(w.statuses).toEqual(['expired'])
 
   await w.clock.advance(1000)
-  expect(w.statuses).toEqual(['Cache expired', 'Cache expired'])
+  expect(w.statuses).toEqual(['expired', 'expired'])
 })
 
 test('a redraw of the prompt area sets the status line again within a few seconds', async ($, on) => {
   const w = world(on, {}, savedSession(1_000_000 - 70 * MIN))
   await start($)
   await w.clock.advance(5000)
-  expect(w.statuses).toEqual(['Cache expired'])
+  expect(w.statuses).toEqual(['expired'])
 
   await band($, 'desktop')
   await w.clock.advance(1000)
-  expect(w.statuses).toEqual(['Cache expired', 'Cache expired'])
+  expect(w.statuses).toEqual(['expired', 'expired'])
 
   await band($, 'desktop')
   await w.clock.advance(1000)

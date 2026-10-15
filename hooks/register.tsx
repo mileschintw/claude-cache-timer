@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { Elements, EngineInterface, ModelUsage, Register } from 'claude-code'
 
-import type { CacheAlert, CacheHit, CacheLang, CacheSettings, CacheTtl, SavedSession } from '../types'
+import type { CacheAlert, CacheHit, CacheLang, CacheSettings, CacheStatusMode, CacheTtl, SavedSession } from '../types'
 
 const PANE = 'cache-timer'
 const STORE_KEY = 'settings'
@@ -21,7 +21,7 @@ const DEFAULTS: CacheSettings = {
   isAutoCompact: false,
   leadSeconds: 120,
   isBandShown: true,
-  isStatusShown: true,
+  status: 'bar',
   isSecondsShown: false,
   ttlSource: 'default',
   lang: 'en',
@@ -112,12 +112,29 @@ export const LANGS = ['en', 'zh-TW'] as const
 export const langOf = (value: unknown): CacheLang | undefined =>
   typeof value === 'string' ? LANGS.find(l => l.toLowerCase() === value.toLowerCase()) : undefined
 
+export const STATUS_MODES = ['off', 'time', 'bar'] as const satisfies readonly CacheStatusMode[]
+
+/** The status mode for a typed value; `on`, from before there were three, means the bar. */
+export const statusModeOf = (value: unknown): CacheStatusMode | undefined =>
+  value === 'on' ? 'bar' : STATUS_MODES.find(m => m === value)
+
+/**
+ * Settings as saved, filled in from the defaults. Settings saved before the
+ * status line had three modes carry `isStatusShown` instead of `status`.
+ */
+export const settingsOf = (saved: Partial<CacheSettings> & { isStatusShown?: unknown }): CacheSettings => {
+  const { isStatusShown, ...rest } = saved
+  const status = statusModeOf(rest.status) ?? (isStatusShown === false ? 'off' : DEFAULTS.status)
+
+  return { ...DEFAULTS, ...rest, status, lang: langOf(rest.lang) ?? DEFAULTS.lang }
+}
+
 /** Every UI string, keyed by language. */
 export const STRINGS = {
   en: {
     notifyTitle: 'Cache timer',
     bandPrefix: 'cache',
-    commandDescription: 'Prompt cache timer: open the pane, or auto on|off, ttl 5m|1h, band on|off, status on|off, seconds on|off, lang en|zh-TW',
+    commandDescription: 'Prompt cache timer: open the pane, or auto on|off, ttl 5m|1h, band on|off, status off|time|bar, seconds on|off, lang en|zh-TW',
     paneTitle: 'Prompt cache',
     on: 'on',
     off: 'off',
@@ -140,19 +157,20 @@ export const STRINGS = {
     autoReply: (onOff: string) => `Auto-compact before expiry: ${onOff}`,
     ttlReply: (ttl: string) => `Cache TTL set to ${ttl}`,
     bandReply: (shown: string) => `Band above the prompt: ${shown}`,
-    statusReply: (shown: string) => `Countdown in the status line: ${shown}`,
+    statusReply: (mode: string) => `Status line: ${mode}`,
     secondsReply: (onOff: string) => `Always show seconds: ${onOff}`,
     langReply: 'Language set to English',
     compactFailed: (why: string) => `Compaction failed: ${why}`,
     alreadyCompacting: 'Already compacting the conversation',
-    usage: 'Usage: /cache [auto on|off] [ttl 5m|1h] [band on|off] [status on|off] [seconds on|off] [lang en|zh-TW]',
+    usage: 'Usage: /cache [auto on|off] [ttl 5m|1h] [band on|off] [status off|time|bar] [seconds on|off] [lang en|zh-TW]',
     autoLabel: (onOff: string) => `auto-compact ${onOff}`,
     compactNow: 'Compact',
     pane: 'Pane',
     hide: 'Hide',
     bandRewrite: (tok: string) => `next message re-writes ~${tok}`,
     compacting: 'Compacting…',
-    statusHead: (b: string, c: string) => `cache ${b} ${c} left`,
+    statusTime: (c: string) => `${c} left`,
+    statusExpired: 'expired',
     compactedHint: 'Compacted; the next message writes a fresh cache',
     noCacheHint: 'No cache yet; the timer starts after your first message',
     remaining: (c: string) => `${c} left`,
@@ -168,7 +186,8 @@ export const STRINGS = {
     leadNote: (sec: number, min: string) =>
       `Compacts with ${sec}s left (at most 1 minute ahead on a 5m TTL); never auto-compacts under ${min} tokens of context.`,
     band: 'Band above the prompt',
-    statusLine: 'Countdown in the status line',
+    statusLine: 'Status line',
+    statusModes: { off: 'off', time: 'time', bar: 'bar + time' },
     seconds: 'Always show seconds',
     language: 'Language',
     compactConversation: 'Compact conversation now',
@@ -199,19 +218,20 @@ export const STRINGS = {
     autoReply: (onOff: string) => `到期前自動壓縮：${onOff}`,
     ttlReply: (ttl: string) => `快取 TTL 設為 ${ttl}`,
     bandReply: (shown: string) => `提示框上方進度條：${shown}`,
-    statusReply: (shown: string) => `狀態列倒數：${shown}`,
+    statusReply: (mode: string) => `狀態列：${mode}`,
     secondsReply: (onOff: string) => `永遠顯示秒數：${onOff}`,
     langReply: '介面語言已設為繁體中文',
     compactFailed: (why: string) => `壓縮失敗：${why}`,
     alreadyCompacting: '正在壓縮對話',
-    usage: '用法：/cache [auto on|off] [ttl 5m|1h] [band on|off] [status on|off] [seconds on|off] [lang en|zh-TW]',
+    usage: '用法：/cache [auto on|off] [ttl 5m|1h] [band on|off] [status off|time|bar] [seconds on|off] [lang en|zh-TW]',
     autoLabel: (onOff: string) => `自動壓縮 ${onOff}`,
     compactNow: '立即壓縮',
     pane: '面板',
     hide: '隱藏',
     bandRewrite: (tok: string) => `下一則重寫約 ${tok}`,
     compacting: '壓縮中…',
-    statusHead: (b: string, c: string) => `快取 ${b} 剩 ${c}`,
+    statusTime: (c: string) => `剩 ${c}`,
+    statusExpired: '已過期',
     compactedHint: '已壓縮，下一則訊息會寫入新的快取',
     noCacheHint: '還沒有快取，送出第一則訊息後開始計時',
     remaining: (c: string) => `剩餘 ${c}`,
@@ -227,7 +247,8 @@ export const STRINGS = {
     leadNote: (sec: number, min: string) =>
       `實際在剩 ${sec} 秒時壓縮（5m TTL 最多提前 1 分鐘）；上下文不到 ${min} tokens 時不自動壓縮。`,
     band: '提示框上方進度條',
-    statusLine: '狀態列倒數',
+    statusLine: '狀態列',
+    statusModes: { off: '關', time: '時間', bar: '進度條＋時間' },
     seconds: '永遠顯示秒數',
     language: '語言',
     compactConversation: '立即壓縮對話',
@@ -528,13 +549,12 @@ async function showStatus($: EngineInterface) {
   const hit = await read($, last)
   const s = await read($, settings)
   let text: string | undefined
-  if (hit !== null && s.isStatusShown) {
+  if (hit !== null && s.status !== 'off') {
     const L: Strings = STRINGS[s.lang]
     const remaining = hit.at + ttlMs(s.ttl) - (await $.clock.now())
-    text =
-      remaining > 0
-        ? L.statusHead(bar(remaining / ttlMs(s.ttl), STATUS_BAR_CELLS), countdown(s.lang, remaining, s.isSecondsShown))
-        : L.expired
+    // The host labels the line with the mod's name, so the text doesn't say "cache" again.
+    const time = L.statusTime(countdown(s.lang, remaining, s.isSecondsShown))
+    text = remaining <= 0 ? L.statusExpired : s.status === 'bar' ? `${bar(remaining / ttlMs(s.ttl), STATUS_BAR_CELLS)} ${time}` : time
   }
   const t = await $.clock.now()
   const resendMs = isRedrawn ? STATUS_REDRAWN_RESEND_MS : STATUS_RESEND_MS
@@ -687,7 +707,7 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     isHeadless = !e.isInteractive
     const saved = (await $.store.get(STORE_KEY)) as Partial<CacheSettings> | undefined
-    if (saved) await update($, settings, () => ({ ...DEFAULTS, ...saved, lang: langOf(saved.lang) ?? DEFAULTS.lang }))
+    if (saved) await update($, settings, () => settingsOf(saved))
 
     // The userConfig language applies on first run and whenever it changed since last seen;
     // otherwise the language picked in the pane or with /cache lang stands.
@@ -700,7 +720,7 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: 'cache',
       description: (await strings($)).commandDescription,
-      argumentHint: '[auto on|off] [ttl 5m|1h] [band on|off] [status on|off] [seconds on|off] [lang en|zh-TW]',
+      argumentHint: '[auto on|off] [ttl 5m|1h] [band on|off] [status off|time|bar] [seconds on|off] [lang en|zh-TW]',
     })
 
     // A pane can outlive a reload of the module; the engine's list says whether it is up.
@@ -828,10 +848,11 @@ export const register: Register = (on, options) => {
       return { text: L.bandReply(value === 'on' ? L.shown : L.hidden) }
     }
 
-    if (verb === 'status' && (value === 'on' || value === 'off')) {
-      await saveSettings($, s => ({ ...s, isStatusShown: value === 'on' }))
+    const status = statusModeOf(value)
+    if (verb === 'status' && status !== undefined) {
+      await saveSettings($, s => ({ ...s, status }))
 
-      return { text: L.statusReply(value === 'on' ? L.shown : L.hidden) }
+      return { text: L.statusReply(L.statusModes[status]) }
     }
 
     if (verb === 'seconds' && (value === 'on' || value === 'off')) {
@@ -962,6 +983,7 @@ export const register: Register = (on, options) => {
       { value: true, label: L.shown },
       { value: false, label: L.hidden },
     ]
+    const statusModes = STATUS_MODES.map(value => ({ value, label: L.statusModes[value] }))
 
     const headline =
       hit === null ? (
@@ -1022,7 +1044,7 @@ export const register: Register = (on, options) => {
           )}
           <Text dimColor>{L.leadNote(Math.round(leadMs(s) / 1000), tokens(MIN_COMPACT_TOKENS))}</Text>
           {settingRow(els, 'band', L.band, shownHidden, s.isBandShown, v => saveSettings($, x => ({ ...x, isBandShown: v })))}
-          {settingRow(els, 'status', L.statusLine, shownHidden, s.isStatusShown, v => saveSettings($, x => ({ ...x, isStatusShown: v })))}
+          {settingRow(els, 'status', L.statusLine, statusModes, s.status, v => saveSettings($, x => ({ ...x, status: v })))}
           {settingRow(els, 'seconds', L.seconds, onOff, s.isSecondsShown, v => saveSettings($, x => ({ ...x, isSecondsShown: v })))}
           {settingRow(
             els,

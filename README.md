@@ -15,7 +15,7 @@ Works in the Claude Code terminal and in the Claude desktop app's Code tab. Engl
 
 ### A clean, glanceable progress bar
 
-- **In the status line, always.** `cache ████░░░░ 27 min left`, on by default, with no setup.
+- **In the status line, always.** `████░░░░ 27 min left` next to the `cache-timer` label, on by default, with no setup. Keep just `27 min left` if space is tight.
 - **One row above the prompt.** On by default, and one click hides it. The bar goes from green to yellow to red as the cache runs down. Next to it: the time left, whether auto-compact is on, and a Compact button. When the window narrows, the row drops its less important parts and never wraps.
 - **Native in the desktop app.** The desktop app draws the bar as a smooth rounded SVG bar; the terminal uses block characters:
 
@@ -71,7 +71,7 @@ Every session started after that loads the mod.
 
 ## All features
 
-- **Status line countdown.** Whole minutes until the last 5 minutes, then `mm:ss`, or `Cache expired`. On by default.
+- **Status line countdown.** Whole minutes until the last 5 minutes, then `mm:ss`, or `expired`. Shows a bar and the time by default; switch to the time alone, or off.
 - **Band above the prompt.** On by default; hide it with its ✕ (**Hide** in the desktop app) or `/cache band off`. After the cache expires, it says how many tokens the next message re-writes. Its **Pane** button opens the `/cache` pane and stays lit while the pane is open; press it again to close the pane.
 - **`/cache` pane.** The time left and a Compact button, the last read and write sizes, and how many tokens an expiry would re-write. It also holds the settings, each a row of buttons with the current value highlighted.
 
@@ -92,7 +92,7 @@ The countdown appears in the status line after your first message. Everything el
 | `/cache` | Open the pane. Where no pane can be placed, prints the same figures. |
 | `/cache auto on` / `off` | Turn auto-compact on or off |
 | `/cache ttl 5m` / `1h` | Set the TTL by hand |
-| `/cache status on` / `off` | Show or hide the countdown in the status line (on by default) |
+| `/cache status bar` / `time` / `off` | Show a bar and the time left in the status line (the default), the time alone, or nothing |
 | `/cache band on` / `off` | Show or hide the band above the prompt (on by default) |
 | `/cache seconds on` / `off` | Show `mm:ss` the whole time instead of whole minutes until the last 5 minutes (off by default) |
 | `/cache lang en` / `zh-TW` | Switch the interface language |

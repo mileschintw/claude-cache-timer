@@ -2,14 +2,17 @@ export type CacheTtl = '5m' | '1h'
 
 export type CacheLang = 'en' | 'zh-TW'
 
+/** What the status line shows: nothing, the time left, or a bar and the time left. */
+export type CacheStatusMode = 'off' | 'time' | 'bar'
+
 export type CacheSettings = {
   ttl: CacheTtl
   isAutoCompact: boolean
   /** Seconds before expiry that auto-compact fires. */
   leadSeconds: number
   isBandShown: boolean
-  /** Show the countdown in the status line. */
-  isStatusShown: boolean
+  /** What the status line shows. */
+  status: CacheStatusMode
   /** Show `mm:ss` the whole time, not whole minutes until 5 minutes are left. */
   isSecondsShown: boolean
   /** Where the TTL came from: the default, a response that proved it, a model switch, or the person. */
