@@ -73,9 +73,9 @@ Every session started after that loads the mod.
 
 - **Status line countdown.** Whole minutes until the last 5 minutes, then `mm:ss`, or `Cache expired`. On by default.
 - **Band above the prompt.** On by default; hide it with its ✕ (**Hide** in the desktop app) or `/cache band off`. After the cache expires, it says how many tokens the next message re-writes. Its **Pane** button opens the `/cache` pane and stays lit while the pane is open; press it again to close the pane.
-- **`/cache` pane.** The time left and a Compact button, the last read and write sizes, this session's hit rate, expiries and compactions, and a sparkline of how much of each request the cache served. It also holds the settings, each a row of buttons with the current value highlighted.
+- **`/cache` pane.** The time left and a Compact button, the last read and write sizes, and how many tokens an expiry would re-write. It also holds the settings, each a row of buttons with the current value highlighted.
 
-  <img src="docs/images/pane-desktop.png" alt="The /cache pane: time left, last read and write, session stats and settings" width="400">
+  <img src="docs/images/pane-desktop.png" alt="The /cache pane: time left, last read and write, and settings" width="400">
 - **Expiry reminders.** A toast 5 minutes before a 1h cache expires (1 minute before a 5m one), and another when it has expired.
 - **Auto-compact.** Off by default. Compacts 1, 2 or 5 minutes before expiry, while the cache is still warm.
 - **One-click compact.** From the band or the pane. The button reads `Compacting…` until the compaction ends, and the band then says the next message writes a fresh cache.
@@ -112,7 +112,7 @@ The latest change wins. A language picked in the pane or with `/cache lang` is s
 ## How it works
 
 - **Timing.** Every model request on the main thread reports how many tokens it read from the cache and how many it wrote. A request that read or wrote any restarts the countdown from that moment. Subagent requests use their own caches and are ignored.
-- **After a restart.** The timer and this session's stats are saved as they change (for the 20 most recent sessions). A session last used before 0.3, or a fork, has nothing saved; its countdown is estimated from when the transcript's last response came in, and the pane shows only its context size.
+- **After a restart.** The timer is saved as it changes (for the 20 most recent sessions). A session last used before 0.3, or a fork, has nothing saved; its countdown is estimated from when the transcript's last response came in, and the pane shows only its context size.
 - **Auto-compact rules.** Auto-compact only fires when Claude is idle, at most once per cache window, and only when the context is at least 20k tokens. Below that, a summary saves too little to be worth the detail it drops. On a 5m cache the lead time is capped at 1 minute, so a pause shorter than 4 minutes never triggers a compaction.
 - **Compacting in the desktop app.** The desktop app (and any SDK or `-p` session) can't compact from a mod directly, so the Compact buttons run `/compact` there, which shows its own result in the transcript.
 - **Resets.** Any compaction, whether `/compact`, Claude Code's own auto-compact, or this mod's, replaces the cached prefix. The timer then waits for the next message.
@@ -123,7 +123,7 @@ The latest change wins. A language picked in the pane or with `/cache lang` is s
 - **Notifications.** Its only output is on screen: the status line, the band, the pane, and the expiry reminders, shown as in-app toasts and, in the terminal, as a system notification. They carry the reminder text and token counts, nothing else.
 - **The command it runs.** In the desktop app and in SDK or `-p` sessions, the Compact buttons and auto-compact run `/compact`, and only `/compact`: when you press a button, or, with auto-compact on, when Claude is idle shortly before the cache expires. In the terminal it compacts through Claude Code's own compaction call instead.
 - **Hooks.** It watches `turn.start`, `turn.step`, `turn.complete`, `session.start`, `session.compact`, `ui.close` (to see the pane close), the resume and model-switch events, and the `AbovePrompt` slot. It passes every event on unchanged; it only reads the token counts, the reported cache TTL, and whether a compaction happened.
-- **Stored data.** Its settings, and the timer and stats of the 20 most recent sessions, are kept in Claude Code's local plugin store.
+- **Stored data.** Its settings, and the timer of the 20 most recent sessions, are kept in Claude Code's local plugin store.
 
 The `.github/` folder is this repository's CI, which releases new versions. It isn't part of the plugin at run time.
 

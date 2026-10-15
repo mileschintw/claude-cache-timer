@@ -31,19 +31,9 @@ export type CacheHit = {
   isEstimated?: true
 }
 
-export type CacheStats = {
-  requests: number
-  hits: number
-  expiries: number
-  compactions: number
-  /** Share of each request's input the cache served, oldest first, 0..1. */
-  history: number[]
-}
-
 /** One session's timer as the store keeps it, so it outlives a restart of the app. */
 export type SavedSession = {
   last: CacheHit | null
-  stats: CacheStats
   /** When it was saved, ms since the epoch; the oldest sessions are dropped first. */
   savedAt: number
 }
@@ -56,7 +46,6 @@ declare module 'claude-code' {
     'cache-timer': {
       settings: CacheSettings
       last: CacheHit | null
-      stats: CacheStats
       alert: CacheAlert
       now: number
       /** When the running compaction started, ms since the epoch; 0 while none runs. */

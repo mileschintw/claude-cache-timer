@@ -73,9 +73,9 @@ git clone https://github.com/mileschintw/claude-cache-timer.git ~/.claude/mods/c
 
 - **狀態列倒數**：剩 5 分鐘前只顯示分鐘，最後 5 分鐘顯示 `mm:ss`，過期後顯示 `快取已過期`。預設開啟。
 - **提示框上方的進度條**：預設開啟，可以按它的 ✕（桌面版是「隱藏」）或用 `/cache band off` 隱藏。快取過期後會顯示下一則訊息要重新寫入多少 tokens。上面的「面板」按鈕會開啟 `/cache` 面板，面板開著時按鈕會亮起；再按一次就會關閉面板。
-- **`/cache` 面板**：剩餘時間和「立即壓縮」按鈕、上次讀寫了多少 tokens、本 session 的命中率、過期與壓縮次數，以及每次請求快取命中比例的迷你圖。所有設定也都在這裡，每一項是一排按鈕，目前的值會標示出來。
+- **`/cache` 面板**：剩餘時間和「立即壓縮」按鈕、上次讀寫了多少 tokens，以及過期後要重新寫入多少 tokens。所有設定也都在這裡，每一項是一排按鈕，目前的值會標示出來。
 
-  <img src="docs/images/pane-desktop.png" alt="/cache 面板：剩餘時間、上次讀寫、本 session 統計與設定" width="400">
+  <img src="docs/images/pane-desktop.png" alt="/cache 面板：剩餘時間、上次讀寫與設定" width="400">
 - **到期提醒**：1h 快取在過期前 5 分鐘提醒（5m 快取是前 1 分鐘），過期時再提醒一次。
 - **自動壓縮**：預設關閉。在過期前 1、2 或 5 分鐘、快取還有效時壓縮對話。
 - **一鍵壓縮**：在進度條或面板按按鈕。壓縮進行中按鈕會顯示「壓縮中…」，完成後進度條會提示下一則訊息會寫入新的快取。
@@ -112,7 +112,7 @@ git clone https://github.com/mileschintw/claude-cache-timer.git ~/.claude/mods/c
 ## 運作原理
 
 - **計時方式**：主對話的每一次模型請求都會回報從快取讀了多少 tokens、寫入多少。只要有讀或寫，倒數就從那一刻重新開始。子代理（subagent）的請求有各自的快取，不列入計算。
-- **重開之後**：計時器和本 session 的統計會隨時存下來（保留最近 20 個 session）。在 0.3 之前最後使用的 session，或 fork 出來的 session，沒有存檔，倒數會依對話紀錄最後一次回覆的時間估算，面板只顯示上下文大小。
+- **重開之後**：計時器會隨時存下來（保留最近 20 個 session）。在 0.3 之前最後使用的 session，或 fork 出來的 session，沒有存檔，倒數會依對話紀錄最後一次回覆的時間估算，面板只顯示上下文大小。
 - **自動壓縮的條件**：只在 Claude 閒置時觸發，每個快取週期最多一次，而且上下文至少要有 20k tokens。上下文比這更短時，壓縮省下的成本不值得犧牲細節。5m 快取的提前時間最多 1 分鐘，所以停頓不到 4 分鐘時絕不會壓縮。
 - **桌面版的壓縮**：桌面版（以及 SDK 或 `-p` 的 session）不允許 mod 直接壓縮，所以在那裡按壓縮按鈕會執行 `/compact`，結果會顯示在對話紀錄裡。
 - **重新計時**：任何壓縮（`/compact`、Claude Code 內建的自動壓縮，或這個 mod 觸發的）都會取代原本的快取內容，計時器會等到下一則訊息再開始。
@@ -123,7 +123,7 @@ git clone https://github.com/mileschintw/claude-cache-timer.git ~/.claude/mods/c
 - **通知**：它的輸出都在畫面上：狀態列、進度條、面板，以及到期提醒。提醒以 app 內的 toast 顯示，在終端機還會發出系統通知，內容只有提醒文字和 token 數。
 - **會執行的指令**：在桌面版，以及 SDK 或 `-p` 的 session 中，「立即壓縮」按鈕和自動壓縮會執行 `/compact`，也只會執行這個指令：在你按下按鈕時，或開啟自動壓縮後、Claude 閒置且快取即將過期時。在終端機則改用 Claude Code 本身的壓縮功能。
 - **Hooks**：它監聽 `turn.start`、`turn.step`、`turn.complete`、`session.start`、`session.compact`、`ui.close`（得知面板已關閉）、恢復 session 與切換模型的事件，以及 `AbovePrompt` 區塊。每個事件都原封不動地往下傳，它只讀取 token 數、回報的快取 TTL，以及是否發生壓縮。
-- **儲存的資料**：設定，以及最近 20 個 session 的計時與統計，存在 Claude Code 本機的 plugin 儲存空間。
+- **儲存的資料**：設定，以及最近 20 個 session 的計時，存在 Claude Code 本機的 plugin 儲存空間。
 
 `.github/` 資料夾是這個 repo 用來發版的 CI，不屬於執行中的 plugin。
 

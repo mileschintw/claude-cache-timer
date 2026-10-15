@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { Elements, EngineInterface, ModelUsage, Register } from 'claude-code'
 
-import type { CacheAlert, CacheHit, CacheLang, CacheSettings, CacheStats, CacheTtl, SavedSession } from '../types'
+import type { CacheAlert, CacheHit, CacheLang, CacheSettings, CacheTtl, SavedSession } from '../types'
 
 const PANE = 'cache-timer'
 const STORE_KEY = 'settings'
@@ -9,8 +9,7 @@ const STORE_KEY = 'settings'
 const CONFIG_LANG_KEY = 'configLang'
 /** Below this context size a compaction saves too little to be worth losing detail. */
 const MIN_COMPACT_TOKENS = 20_000
-const HISTORY = 30
-/** Store key prefix for one session's last hit and stats, which outlive a restart. */
+/** Store key prefix for one session's last hit, which outlives a restart. */
 const SESSION_KEY_PREFIX = 'session:'
 /** How many sessions' saved hits the store keeps; the oldest go first. */
 const SESSIONS_KEPT = 20
@@ -30,8 +29,6 @@ const DEFAULTS: CacheSettings = {
 
 const settings = atom({ plugin: 'cache-timer', key: 'settings' } as const, DEFAULTS)
 const last = atom({ plugin: 'cache-timer', key: 'last' } as const, null)
-const NO_STATS: CacheStats = { requests: 0, hits: 0, expiries: 0, compactions: 0, history: [] }
-const stats = atom({ plugin: 'cache-timer', key: 'stats' } as const, NO_STATS)
 const alert = atom({ plugin: 'cache-timer', key: 'alert' } as const, 'none')
 const now = atom({ plugin: 'cache-timer', key: 'now' } as const, 0)
 const compactingSince = atom({ plugin: 'cache-timer', key: 'compactingSince' } as const, 0)
@@ -87,10 +84,6 @@ export const bar = (fraction: number, width: number) => {
   return '█'.repeat(filled) + '░'.repeat(width - filled)
 }
 
-const SPARKS = '▁▂▃▄▅▆▇█'
-export const spark = (history: readonly number[]) =>
-  history.map(r => SPARKS[Math.min(SPARKS.length - 1, Math.floor(r * SPARKS.length))]).join('')
-
 export const contextOf = (hit: CacheHit) => hit.read + hit.write + hit.uncached
 
 const tone = (fraction: number) => (fraction > 0.5 ? 'success' : fraction > 0.15 ? 'warning' : 'error')
@@ -137,8 +130,6 @@ export const STRINGS = {
     remainingHead: (c: string) => `Cache has ${c} left`,
     expired: 'Cache expired',
     summaryHead: (head: string, ttl: string, source: string) => `${head} (TTL ${ttl}, ${source})`,
-    summaryStats: (rate: string, hits: number, requests: number, expiries: number, compactions: number) =>
-      `Hit rate ${rate} (${hits}/${requests}) · ${expiries} expired · ${compactions} compacted`,
     summaryAuto: (onOff: string, sec: number) => `Auto-compact before expiry: ${onOff}, ${sec}s ahead`,
     compactSkipped: (why: string) => `Compaction skipped: ${why}`,
     autoCompacted: 'Cache was about to expire, so the conversation was compacted',
@@ -169,10 +160,6 @@ export const STRINGS = {
     tokensLine: (r: string, w: string, u: string) => `This request read ${r} · wrote ${w} · uncached ${u}`,
     estimatedLine: (tok: string) => `Restored after a restart: about ${tok} tokens of context; read and write unknown`,
     rewriteLine: (tok: string) => `After expiry, about ${tok} tokens are re-written`,
-    thisSession: 'This session',
-    statsLine: (rate: string, hits: number, requests: number, expiries: number, compactions: number) =>
-      `Hit rate ${rate} (${hits}/${requests} requests) · ${expiries} expired · ${compactions} compacted`,
-    historyLine: (sp: string) => `Cached share per request: ${sp}`,
     settings: 'Settings',
     ttlLabel: (source: string) => `TTL (${source})`,
     autoCompact: 'Auto-compact before expiry',
@@ -202,8 +189,6 @@ export const STRINGS = {
     remainingHead: (c: string) => `快取剩 ${c}`,
     expired: '快取已過期',
     summaryHead: (head: string, ttl: string, source: string) => `${head}（TTL ${ttl}，${source}）`,
-    summaryStats: (rate: string, hits: number, requests: number, expiries: number, compactions: number) =>
-      `命中率 ${rate}（${hits}/${requests}）· 過期 ${expiries} 次 · 壓縮 ${compactions} 次`,
     summaryAuto: (onOff: string, sec: number) => `到期前自動壓縮：${onOff}，提前 ${sec} 秒`,
     compactSkipped: (why: string) => `壓縮被略過：${why}`,
     autoCompacted: '快取快過期了，已自動壓縮對話',
@@ -234,10 +219,6 @@ export const STRINGS = {
     tokensLine: (r: string, w: string, u: string) => `這次讀取 ${r} · 寫入 ${w} · 未快取 ${u}`,
     estimatedLine: (tok: string) => `重開後還原：上下文約 ${tok} tokens，讀寫各多少不明`,
     rewriteLine: (tok: string) => `過期後重新寫入約 ${tok} tokens`,
-    thisSession: '本 session',
-    statsLine: (rate: string, hits: number, requests: number, expiries: number, compactions: number) =>
-      `命中率 ${rate}（${hits}/${requests} 次請求）· 過期 ${expiries} 次 · 壓縮 ${compactions} 次`,
-    historyLine: (sp: string) => `每次請求的快取比例：${sp}`,
     settings: '設定',
     ttlLabel: (source: string) => `TTL（${source}）`,
     autoCompact: '到期前自動壓縮',
@@ -328,7 +309,6 @@ async function notify($: EngineInterface, text: string) {
 async function summary($: EngineInterface) {
   const s = await read($, settings)
   const hit = await read($, last)
-  const st = await read($, stats)
   const L: Strings = STRINGS[s.lang]
   const t = await $.clock.now()
   const remaining = hit === null ? 0 : hit.at + ttlMs(s.ttl) - t
@@ -338,11 +318,9 @@ async function summary($: EngineInterface) {
       : remaining > 0
         ? L.remainingHead(countdown(s.lang, remaining, s.isSecondsShown))
         : L.expired
-  const rate = st.requests === 0 ? '—' : `${Math.round((st.hits / st.requests) * 100)}%`
 
   return [
     L.summaryHead(head, s.ttl, L.source[s.ttlSource]),
-    L.summaryStats(rate, st.hits, st.requests, st.expiries, st.compactions),
     L.summaryAuto(s.isAutoCompact ? L.on : L.off, Math.round(leadMs(s) / 1000)),
   ].join('\n')
 }
@@ -387,13 +365,12 @@ async function markCompacted($: EngineInterface) {
   await update($, compactingSince, () => 0)
   await update($, last, () => null)
   await update($, alert, (): CacheAlert => 'compacted')
-  await update($, stats, st => ({ ...st, compactions: st.compactions + 1 }))
   await saveSession($)
 }
 
-/** Keeps this session's last hit and stats in the store, where a restart finds them. */
+/** Keeps this session's last hit in the store, where a restart finds them. */
 async function saveSession($: EngineInterface) {
-  const saved: SavedSession = { last: await read($, last), stats: await read($, stats), savedAt: await $.clock.now() }
+  const saved: SavedSession = { last: await read($, last), savedAt: await $.clock.now() }
   await $.store.set(SESSION_KEY_PREFIX + (await $.session.id()), saved)
 }
 
@@ -413,11 +390,10 @@ async function pruneSessions($: EngineInterface) {
  * Puts a hit found after a restart back on the timer, with the reminders that
  * already fired for it marked as fired and no auto-compact the moment it loads.
  */
-async function restoreHit($: EngineInterface, hit: CacheHit | null, st: CacheStats) {
+async function restoreHit($: EngineInterface, hit: CacheHit | null) {
   const t = await $.clock.now()
   const s = await read($, settings)
   await update($, last, () => hit)
-  await update($, stats, () => st)
   await update($, now, () => t)
   if (hit === null) return
 
@@ -431,7 +407,7 @@ async function restoreSession($: EngineInterface) {
   const saved = (await $.store.get(SESSION_KEY_PREFIX + (await $.session.id()))) as SavedSession | undefined
   if (saved === undefined) return false
 
-  await restoreHit($, saved.last, saved.stats)
+  await restoreHit($, saved.last)
 
   return true
 }
@@ -443,7 +419,7 @@ async function restoreSession($: EngineInterface) {
  */
 async function estimateHit($: EngineInterface, secondsSince: number, contextTokens: number) {
   const hit: CacheHit = { at: (await $.clock.now()) - secondsSince * 1000, read: contextTokens, write: 0, uncached: 0, isEstimated: true }
-  await restoreHit($, hit, NO_STATS)
+  await restoreHit($, hit)
 }
 
 /** A line in the debug log; `$.ui.log` is missing in tests. */
@@ -753,24 +729,10 @@ export const register: Register = (on, options) => {
       const t = await $.clock.now()
       const prev = await read($, last)
       const s = await read($, settings)
-      const wasExpired = prev !== null && prev.at + ttlMs(s.ttl) <= t && read_ === 0 && write > 0
       const seen = prev === null ? undefined : observedTtl(t - prev.at, read_, write)
       if (seen !== undefined && (seen !== s.ttl || s.ttlSource !== 'observed')) {
         await saveSettings($, x => ({ ...x, ttl: seen, ttlSource: 'observed' }))
       }
-
-      await update($, stats, (st): CacheStats => {
-        const input = read_ + write + usage.input_tokens
-        const ratio = input === 0 ? 0 : read_ / input
-
-        return {
-          ...st,
-          requests: st.requests + 1,
-          hits: st.hits + (read_ > 0 ? 1 : 0),
-          expiries: st.expiries + (wasExpired ? 1 : 0),
-          history: [...st.history, ratio].slice(-HISTORY),
-        }
-      })
 
       if (read_ > 0 || write > 0) {
         const hit: CacheHit = { at: t, read: read_, write, uncached: usage.input_tokens }
@@ -984,7 +946,6 @@ export const register: Register = (on, options) => {
     const { Box, Text, Button } = els
     const s = await read($, settings)
     const hit = await read($, last)
-    const st = await read($, stats)
     const L: Strings = STRINGS[s.lang]
     const state = await read($, alert)
     const t = await read($, now)
@@ -992,7 +953,6 @@ export const register: Register = (on, options) => {
     const remaining = hit === null ? 0 : hit.at + total - t
     const fraction = remaining / total
     const width = Math.max(10, Math.min(40, e.props.bodyColumns - 4))
-    const hitRate = st.requests === 0 ? '—' : `${Math.round((st.hits / st.requests) * 100)}%`
     const isCompactingNow = (await read($, compactingSince)) !== 0
     const onOff = [
       { value: true, label: L.on },
@@ -1045,12 +1005,6 @@ export const register: Register = (on, options) => {
             <Text dimColor>{L.rewriteLine(tokens(contextOf(hit)))}</Text>
           </Box>
         )}
-
-        <Box flexDirection="column">
-          <Text bold>{L.thisSession}</Text>
-          <Text>{L.statsLine(hitRate, st.hits, st.requests, st.expiries, st.compactions)}</Text>
-          {st.history.length > 0 && <Text dimColor>{L.historyLine(spark(st.history))}</Text>}
-        </Box>
 
         <Box flexDirection="column" gap={1}>
           <Text bold>{L.settings}</Text>

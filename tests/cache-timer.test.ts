@@ -499,7 +499,6 @@ test('the UI is English by default', async ($, on) => {
   }
   const ui = await pane($)
   expect(await ui.find({ type: 'Text', text: /^Settings$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /Hit rate 100% \(1\/1 requests\)/ })).toBeDefined()
   expect(w.toasts).toEqual([])
 })
 
@@ -771,12 +770,11 @@ test('a Compact press returns before a slow compaction ends, and still reports h
 const savedSession = (at: number) => ({
   'session:sess-1': {
     last: { at, read: 150_000, write: 2_000, uncached: 500 },
-    stats: { requests: 1, hits: 1, expiries: 0, compactions: 0, history: [150_000 / 152_500] },
     savedAt: at,
   },
 })
 
-test('a turn saves the session last hit and stats to the store', async ($, on) => {
+test('a turn saves the session last hit to the store', async ($, on) => {
   const w = world(on)
   await start($)
   await step($)
@@ -795,7 +793,6 @@ test('after a restart the band and pane show the saved hit right away', async ($
   const p = await pane($)
   expect(await p.find({ type: 'Text', text: /^50 min left$/ })).toBeDefined()
   expect(await p.find({ type: 'Text', text: /read 150k · wrote 2k/ })).toBeDefined()
-  expect(await p.find({ type: 'Text', text: /\(1\/1 requests\)/ })).toBeDefined()
   expect(w.toasts).toHaveLength(0)
 })
 
@@ -856,7 +853,7 @@ test('a restart after a compaction finds no hit to time', async ($, on) => {
 
 test('the store keeps only the 20 most recently saved sessions', async ($, on) => {
   const old = Object.fromEntries(
-    Array.from({ length: 25 }, (_, i) => [`session:old-${i}`, { last: null, stats: {}, savedAt: i }]),
+    Array.from({ length: 25 }, (_, i) => [`session:old-${i}`, { last: null, savedAt: i }]),
   )
   const w = world(on, undefined, { ...old, other: 1 })
   await start($)
