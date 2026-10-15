@@ -73,7 +73,7 @@ Every session started after that loads the mod.
 
 - **Status line countdown.** Whole minutes until the last 5 minutes, then `mm:ss`, or `expired`. Shows a bar and the time by default; switch to the time alone, or off.
 - **Band above the prompt.** On by default; hide it with its ✕ (**Hide** in the desktop app) or `/cache band off`. After the cache expires, it says how many tokens the next message re-writes. Its **Pane** button opens the `/cache` pane and stays lit while the pane is open; press it again to close the pane.
-- **`/cache` pane.** The time left and a Compact button, the last read and write sizes, and how many tokens an expiry would re-write. It also holds the settings, each a row of buttons with the current value highlighted.
+- **`/cache` pane.** The time left and a Compact button, the last read and write sizes, and how many tokens an expiry would re-write. Below them, the settings fold away under **▸ Settings**; open them and each is a row of buttons with the current value highlighted. The pane remembers whether they are open.
 
   <img src="docs/images/pane-desktop.png" alt="The /cache pane: time left, last read and write, and settings" width="400">
 - **Expiry reminders.** A toast 5 minutes before a 1h cache expires (1 minute before a 5m one), and another when it has expired.

@@ -146,14 +146,18 @@ async function cache($: Engine, args: string) {
   return $.command.run({ command: 'cache', args } as never)
 }
 
-async function pane($: Engine) {
-  return $.ui.mount({
+/** The pane, its settings unfolded unless `isFolded`. */
+async function pane($: Engine, isFolded = false) {
+  const ui = await $.ui.mount({
     plugin: 'cache-timer',
     surface: 'desktop',
     component: 'Pane',
     requestId: 'cache-timer',
     props: { bodyColumns: 60 } as never,
   })
+  if (!isFolded && (await ui.find({ key: 'lang-en' } as never)) === undefined) await ui.press({ key: 'settings' })
+
+  return ui
 }
 
 const band = ($: Engine, surface: 'terminal' | 'desktop') =>
@@ -518,7 +522,7 @@ test('the UI is English by default', async ($, on) => {
     expect(await ui.find({ type: 'Text', text: /compact/ })).toBeUndefined()
   }
   const ui = await pane($)
-  expect(await ui.find({ type: 'Text', text: /^Settings$/ })).toBeDefined()
+  expect((await ui.find({ key: 'settings' }))?.props.label).toBe('▾ Settings')
   expect(w.toasts).toEqual([])
 })
 
@@ -687,7 +691,7 @@ test('in a headless session the Compact buttons run /compact, one at a time', as
 
   await (await band($, 'desktop')).press({ key: 'compact' })
   // `/compact` hasn't reported back: the button says it is compacting, and a press does nothing.
-  expect(await (await band($, 'desktop')).find({ type: 'Button', label: 'Compacting…' } as never)).toBeDefined()
+  expect((await (await band($, 'desktop')).find({ key: 'compact' }))?.props.label).toBe('Compacting…')
   const p = await pane($)
   await p.press({ key: 'compact-now' })
   expect(runs).toEqual(['compact'])
@@ -975,8 +979,8 @@ test('Compact reads Compacting… until the compaction ends, then the band says 
 
   await (await band($, 'desktop')).press({ key: 'compact' })
   await w.clock.advance(10)
-  expect(await (await band($, 'desktop')).find({ type: 'Button', label: 'Compacting…' } as never)).toBeDefined()
-  expect(await (await pane($)).find({ type: 'Button', label: 'Compacting…' } as never)).toBeDefined()
+  expect((await (await band($, 'desktop')).find({ key: 'compact' }))?.props.label).toBe('Compacting…')
+  expect((await (await pane($)).find({ key: 'compact-now' }))?.props.label).toBe('Compacting…')
 
   open()
   await w.clock.advance(10)
@@ -1028,16 +1032,16 @@ test('the Pane button opens the pane and lights up, and a second press closes it
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await band($, surface)
-    expect(await ui.find({ key: 'pane', variant: 'secondary' } as never)).toBeDefined()
+    expect((await ui.find({ key: 'pane' }))?.props.variant).toBe('secondary')
 
     await ui.press({ key: 'pane' })
     expect(w.opens.at(-1)).toEqual(expect.objectContaining({ id: 'cache-timer', focus: true }))
-    expect(await ui.find({ key: 'pane', variant: 'primary' } as never)).toBeDefined()
+    expect((await ui.find({ key: 'pane' }))?.props.variant).toBe('primary')
 
     await ui.press({ key: 'pane' })
     expect(w.closes.at(-1)).toBe('cache-timer')
     expect(w.panes.size).toBe(0)
-    expect(await ui.find({ key: 'pane', variant: 'secondary' } as never)).toBeDefined()
+    expect((await ui.find({ key: 'pane' }))?.props.variant).toBe('secondary')
   }
 })
 
@@ -1049,11 +1053,11 @@ test('the Pane button is lit while /cache has the pane open, and closes it', asy
 
   await cache($, '')
   const ui = await band($, 'desktop')
-  expect(await ui.find({ key: 'pane', variant: 'primary' } as never)).toBeDefined()
+  expect((await ui.find({ key: 'pane' }))?.props.variant).toBe('primary')
 
   await ui.press({ key: 'pane' })
   expect(w.panes.has('cache-timer')).toBe(false)
-  expect(await ui.find({ key: 'pane', variant: 'secondary' } as never)).toBeDefined()
+  expect((await ui.find({ key: 'pane' }))?.props.variant).toBe('secondary')
 })
 
 test('a pane left open across a reload keeps the Pane button lit', async ($, on) => {
@@ -1063,7 +1067,7 @@ test('a pane left open across a reload keeps the Pane button lit', async ($, on)
   await step($)
 
   const ui = await band($, 'desktop')
-  expect(await ui.find({ key: 'pane', variant: 'primary' } as never)).toBeDefined()
+  expect((await ui.find({ key: 'pane' }))?.props.variant).toBe('primary')
   await ui.press({ key: 'pane' })
   expect(w.closes).toEqual(['cache-timer'])
 })
@@ -1074,13 +1078,33 @@ test('the pane marks the current value of every setting as primary', async ($, o
   await step($)
 
   const p = await pane($)
-  expect(await p.find({ key: 'ttl-1h', variant: 'primary' } as never)).toBeDefined()
-  expect(await p.find({ key: 'ttl-5m', variant: 'secondary' } as never)).toBeDefined()
-  expect(await p.find({ key: 'auto', value: 'off' } as never)).toBeDefined()
+  expect((await p.find({ key: 'ttl-1h' }))?.props.variant).toBe('primary')
+  expect((await p.find({ key: 'ttl-5m' }))?.props.variant).toBe('secondary')
+  expect((await p.find({ key: 'auto' }))?.props.value).toBe('off')
   expect(await p.find({ key: 'lead-120' } as never)).toBeUndefined()
 
   await p.select({ key: 'auto', value: '200000' })
-  expect(await p.find({ key: 'auto', value: '200000' } as never)).toBeDefined()
-  expect(await p.find({ key: 'lead-120', variant: 'primary' } as never)).toBeDefined()
+  expect((await p.find({ key: 'auto' }))?.props.value).toBe('200000')
+  expect((await p.find({ key: 'lead-120' }))?.props.variant).toBe('primary')
   expect(await p.find({ type: 'Text', text: /under 200k tokens/ })).toBeDefined()
+})
+
+test('the pane folds its settings, folded at first, and keeps the choice', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await step($)
+
+  const p = await pane($, true)
+  expect((await p.find({ key: 'settings' }))?.props.label).toBe('▸ Settings')
+  expect((await p.find({ key: 'settings' }))?.props.label).not.toBe('▾ Settings')
+  expect(await p.find({ key: 'ttl-1h' } as never)).toBeUndefined()
+  expect(await p.find({ key: 'compact-now' } as never)).toBeDefined()
+
+  await p.press({ key: 'settings' })
+  expect((await p.find({ key: 'settings' }))?.props.label).toBe('▾ Settings')
+  expect(await p.find({ key: 'ttl-1h' } as never)).toBeDefined()
+  expect((w.store.settings as { isSettingsOpen: boolean }).isSettingsOpen).toBe(true)
+
+  await p.press({ key: 'settings' })
+  expect(await p.find({ key: 'ttl-1h' } as never)).toBeUndefined()
 })

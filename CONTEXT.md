@@ -15,7 +15,7 @@ The single row above the prompt: the countdown plus the action to take on it now
 _Avoid_: bar (that is the progress bar inside it), banner, strip
 
 **Pane**:
-The side pane with the details: the last read and write, and the settings.
+The side pane with the details: the last read and write, and the settings, folded until opened.
 _Avoid_: panel, sidebar
 
 ### The timer

@@ -21,6 +21,8 @@ export type CacheSettings = {
   ttlSource: 'default' | 'observed' | 'switch' | 'manual'
   /** UI language. */
   lang: CacheLang
+  /** The pane's settings are unfolded. */
+  isSettingsOpen: boolean
 }
 
 export type CacheHit = {

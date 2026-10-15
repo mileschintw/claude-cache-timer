@@ -26,6 +26,7 @@ const DEFAULTS: CacheSettings = {
   isSecondsShown: false,
   ttlSource: 'default',
   lang: 'en',
+  isSettingsOpen: false,
 }
 
 const settings = atom({ plugin: 'cache-timer', key: 'settings' } as const, DEFAULTS)
@@ -1058,39 +1059,48 @@ export const register: Register = (on, options) => {
         )}
 
         <Box flexDirection="column" gap={1}>
-          <Text bold>{L.settings}</Text>
-          {settingRow(els, 'ttl', L.ttlLabel(L.source[s.ttlSource]), [{ value: '5m', label: '5m' }, { value: '1h', label: '1h' }], s.ttl, ttl =>
-            saveSettings($, x => ({ ...x, ttl, ttlSource: 'manual' })),
-          )}
-          {Select !== undefined ? (
-            // Our own label, not the Select's: the desktop app dims that one.
-            <Box key="auto-row" flexDirection="row" gap={1}>
-              <Text>{L.autoCompact}</Text>
-              <Select key="auto" options={autoOptions} value={autoValue} onSelect={v => void pickAuto(v)} />
+          <Button
+            key="settings"
+            label={`${s.isSettingsOpen ? '▾' : '▸'} ${L.settings}`}
+            plain
+            onPress={() => void saveSettings($, x => ({ ...x, isSettingsOpen: !x.isSettingsOpen }))}
+          />
+          {s.isSettingsOpen && (
+            <Box flexDirection="column" gap={1}>
+              {settingRow(els, 'ttl', L.ttlLabel(L.source[s.ttlSource]), [{ value: '5m', label: '5m' }, { value: '1h', label: '1h' }], s.ttl, ttl =>
+                saveSettings($, x => ({ ...x, ttl, ttlSource: 'manual' })),
+              )}
+              {Select !== undefined ? (
+                // Our own label, not the Select's: the desktop app dims that one.
+                <Box key="auto-row" flexDirection="row" gap={1}>
+                  <Text>{L.autoCompact}</Text>
+                  <Select key="auto" options={autoOptions} value={autoValue} onSelect={v => void pickAuto(v)} />
+                </Box>
+              ) : (
+                settingRow(els, 'auto', L.autoCompact, autoOptions, autoValue, pickAuto)
+              )}
+              {s.isAutoCompact &&
+                settingRow(
+                  els,
+                  'lead',
+                  L.lead,
+                  [60, 120, 300].map(sec => ({ value: sec, label: L.minutes(sec / 60) })),
+                  s.leadSeconds,
+                  v => saveSettings($, x => ({ ...x, leadSeconds: v })),
+                )}
+              {s.isAutoCompact && <Text dimColor>{L.leadNote(Math.round(leadMs(s) / 1000), tokens(s.compactMinTokens))}</Text>}
+              {settingRow(els, 'band', L.band, shownHidden, s.isBandShown, v => saveSettings($, x => ({ ...x, isBandShown: v })))}
+              {settingRow(els, 'status', L.statusLine, statusModes, s.status, v => saveSettings($, x => ({ ...x, status: v })))}
+              {settingRow(els, 'seconds', L.seconds, onOff, s.isSecondsShown, v => saveSettings($, x => ({ ...x, isSecondsShown: v })))}
+              {settingRow(
+                els,
+                'lang',
+                L.language,
+                LANGS.map(lang => ({ value: lang, label: LANG_LABEL[lang] })),
+                s.lang,
+                lang => saveSettings($, x => ({ ...x, lang })),
+              )}
             </Box>
-          ) : (
-            settingRow(els, 'auto', L.autoCompact, autoOptions, autoValue, pickAuto)
-          )}
-          {s.isAutoCompact &&
-            settingRow(
-              els,
-              'lead',
-              L.lead,
-              [60, 120, 300].map(sec => ({ value: sec, label: L.minutes(sec / 60) })),
-              s.leadSeconds,
-              v => saveSettings($, x => ({ ...x, leadSeconds: v })),
-            )}
-          {s.isAutoCompact && <Text dimColor>{L.leadNote(Math.round(leadMs(s) / 1000), tokens(s.compactMinTokens))}</Text>}
-          {settingRow(els, 'band', L.band, shownHidden, s.isBandShown, v => saveSettings($, x => ({ ...x, isBandShown: v })))}
-          {settingRow(els, 'status', L.statusLine, statusModes, s.status, v => saveSettings($, x => ({ ...x, status: v })))}
-          {settingRow(els, 'seconds', L.seconds, onOff, s.isSecondsShown, v => saveSettings($, x => ({ ...x, isSecondsShown: v })))}
-          {settingRow(
-            els,
-            'lang',
-            L.language,
-            LANGS.map(lang => ({ value: lang, label: LANG_LABEL[lang] })),
-            s.lang,
-            lang => saveSettings($, x => ({ ...x, lang })),
           )}
         </Box>
       </Box>
