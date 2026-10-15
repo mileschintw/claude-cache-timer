@@ -24,6 +24,10 @@ _Avoid_: panel, sidebar
 The time left before the cache expires, shown in whole minutes or as `mm:ss`.
 _Avoid_: timer (the whole mod), TTL (the cache's full lifetime)
 
+**TTL**:
+The cache's full lifetime, 5m or 1h. On auto it is detected from what the API reports and from model switches; picking 5m or 1h fixes it, and detection leaves it alone until auto is picked again.
+_Avoid_: expiry (the moment it runs out)
+
 **Auto-compact**:
 A compaction the mod starts by itself shortly before the cache expires, when the person has turned it on. It is set in the pane, as off or a threshold; the band says when it will run, and says nothing while it is off, so it isn't mistaken for Claude Code's own auto-compact.
 _Avoid_: auto mode

@@ -63,6 +63,8 @@ The directory listing on claude.ai is submitted by hand at claude.ai/directory/m
 - Mocks for op events return `{ value: ... }`.
 - A `ui.render` stub must return a valid element.
 - The test `$` has no `state`: check results by mounting the pane or band and using `ui.find`.
+- `ui.find` matches only `type`, `key` and `text`, and ignores any other field. To check a Button's `label` or `variant`, or a Select's `value`, find it by `key` and read `props`.
+- A mock that stands in for a core command (`/compact`) raises its events with the test's own `$`, not the hook's: a hook's `$` sits beneath the plugins, so the mod never sees what it raises.
 - The compact mock must not return empty `messages`.
 
 ## Agent skills
