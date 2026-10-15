@@ -12,8 +12,8 @@
       "source": {
         "source": "url",
         "url": "https://github.com/mileschintw/claude-cache-timer.git",
-        "ref": "cache-timer--v0.4.2",
-        "sha": "0457b38d02c61b8c3e82f687b68b57cc51d88365"
+        "ref": "cache-timer--v0.4.3",
+        "sha": "9782dfc8f8d904971d193b633a616c39e85f28a7"
       }
     }
   ]
