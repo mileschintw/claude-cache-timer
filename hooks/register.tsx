@@ -463,17 +463,25 @@ const shownAt = (s: CacheSettings, hit: CacheHit, t: number) => {
 let shownStatus: string | undefined
 /** When the status line was last set. */
 let statusSentAt = 0
+/** Whether the prompt area was drawn since the status line was last set. */
+let isRedrawn = false
 /**
  * How often an unchanged status line is set again. After an app restart the
  * first one can come before the surface is ready to draw it.
  */
 const STATUS_RESEND_MS = 15_000
+/**
+ * How soon after the last set a redraw of the prompt area sets it again. The
+ * first redraw after a restart means the surface is up, as the band shows.
+ */
+const STATUS_REDRAWN_RESEND_MS = 3_000
 
 /**
  * Keeps the countdown in the status line, which stays visible where the host
  * hides the band (under the desktop app's dialogs and cards). Sets it when its
- * text changes, and again every 15 seconds while it shows; clears it while no
- * cache is timed or it is turned off.
+ * text changes, and again while it shows: after the prompt area is redrawn (at
+ * most every 3 seconds) and every 15 seconds. Clears it while no cache is timed
+ * or it is turned off.
  */
 async function showStatus($: EngineInterface) {
   const hit = await read($, last)
@@ -485,10 +493,12 @@ async function showStatus($: EngineInterface) {
     text = remaining > 0 ? L.remainingHead(countdown(s.lang, remaining, ttlMs(s.ttl), s.isSecondsShown)) : L.expired
   }
   const t = await $.clock.now()
-  if (text === shownStatus && (text === undefined || t - statusSentAt < STATUS_RESEND_MS)) return
+  const resendMs = isRedrawn ? STATUS_REDRAWN_RESEND_MS : STATUS_RESEND_MS
+  if (text === shownStatus && (text === undefined || t - statusSentAt < resendMs)) return
 
   shownStatus = text
   statusSentAt = t
+  isRedrawn = false
   $.ui.status(text)
 }
 
@@ -711,6 +721,8 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    // The next tick sets the status line again: this redraw may be the first the surface makes.
+    isRedrawn = true
     const s = await read($, settings)
     const hit = await read($, last)
 

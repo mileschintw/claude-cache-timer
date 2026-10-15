@@ -745,6 +745,24 @@ test('an unchanged status line is set again every 15 seconds, in case the first 
   expect(w.statuses).toEqual(['Cache expired', 'Cache expired'])
 })
 
+test('a redraw of the prompt area sets the status line again within a few seconds', async ($, on) => {
+  const w = world(on, {}, savedSession(1_000_000 - 70 * MIN))
+  await start($)
+  await w.clock.advance(5000)
+  expect(w.statuses).toEqual(['Cache expired'])
+
+  await band($, 'desktop')
+  await w.clock.advance(1000)
+  expect(w.statuses).toEqual(['Cache expired', 'Cache expired'])
+
+  await band($, 'desktop')
+  await w.clock.advance(1000)
+  expect(w.statuses).toHaveLength(2)
+
+  await w.clock.advance(2000)
+  expect(w.statuses).toHaveLength(3)
+})
+
 test('a hit that expired while the app was closed shows as expired, with no toast', async ($, on) => {
   const w = world(on, undefined, savedSession(1_000_000 - 70 * MIN))
   await start($)
