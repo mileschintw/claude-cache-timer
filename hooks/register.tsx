@@ -7,8 +7,8 @@ const PANE = 'cache-timer'
 const STORE_KEY = 'settings'
 /** The userConfig language last seen, so a change there wins over the stored one. */
 const CONFIG_LANG_KEY = 'configLang'
-/** Below this context size a compaction saves too little to be worth losing detail. */
-const MIN_COMPACT_TOKENS = 20_000
+/** Context sizes auto-compact can start at; below one, a compaction saves too little to be worth losing detail. */
+export const COMPACT_THRESHOLDS = [50_000, 100_000, 200_000, 500_000] as const
 /** Store key prefix for one session's last hit, which outlives a restart. */
 const SESSION_KEY_PREFIX = 'session:'
 /** How many sessions' saved hits the store keeps; the oldest go first. */
@@ -20,6 +20,7 @@ const DEFAULTS: CacheSettings = {
   ttl: '1h',
   isAutoCompact: false,
   leadSeconds: 120,
+  compactMinTokens: 50_000,
   isBandShown: true,
   status: 'bar',
   isSecondsShown: false,
@@ -112,6 +113,10 @@ export const LANGS = ['en', 'zh-TW'] as const
 export const langOf = (value: unknown): CacheLang | undefined =>
   typeof value === 'string' ? LANGS.find(l => l.toLowerCase() === value.toLowerCase()) : undefined
 
+/** The auto-compact threshold for a typed value: `50k`, or the plain count. */
+export const compactThresholdOf = (value: unknown): number | undefined =>
+  COMPACT_THRESHOLDS.find(n => value === tokens(n) || value === String(n))
+
 export const STATUS_MODES = ['off', 'time', 'bar'] as const satisfies readonly CacheStatusMode[]
 
 /** The status mode for a typed value; `on`, from before there were three, means the bar. */
@@ -134,7 +139,7 @@ export const STRINGS = {
   en: {
     notifyTitle: 'Cache timer',
     bandPrefix: 'cache',
-    commandDescription: 'Prompt cache timer: open the pane, or auto on|off, ttl 5m|1h, band on|off, status off|time|bar, seconds on|off, lang en|zh-TW',
+    commandDescription: 'Prompt cache timer: open the pane, or auto off|50k|100k|200k|500k, ttl 5m|1h, band on|off, status off|time|bar, seconds on|off, lang en|zh-TW',
     paneTitle: 'Prompt cache',
     on: 'on',
     off: 'off',
@@ -155,6 +160,7 @@ export const STRINGS = {
     warnToast: (c: string) => `Cache has ${c} left; continuing now is cheapest`,
     paneOpened: 'Opened the cache pane.',
     autoReply: (onOff: string) => `Auto-compact before expiry: ${onOff}`,
+    autoFrom: (min: string) => `from ${min} tokens`,
     ttlReply: (ttl: string) => `Cache TTL set to ${ttl}`,
     bandReply: (shown: string) => `Band above the prompt: ${shown}`,
     statusReply: (mode: string) => `Status line: ${mode}`,
@@ -162,7 +168,7 @@ export const STRINGS = {
     langReply: 'Language set to English',
     compactFailed: (why: string) => `Compaction failed: ${why}`,
     alreadyCompacting: 'Already compacting the conversation',
-    usage: 'Usage: /cache [auto on|off] [ttl 5m|1h] [band on|off] [status off|time|bar] [seconds on|off] [lang en|zh-TW]',
+    usage: 'Usage: /cache [auto off|50k|100k|200k|500k] [ttl 5m|1h] [band on|off] [status off|time|bar] [seconds on|off] [lang en|zh-TW]',
     autoLabel: (onOff: string) => `auto-compact ${onOff}`,
     compactNow: 'Compact',
     pane: 'Pane',
@@ -195,7 +201,7 @@ export const STRINGS = {
   'zh-TW': {
     notifyTitle: '快取計時器',
     bandPrefix: 'cache',
-    commandDescription: 'Prompt 快取計時器：開啟面板，或 auto on|off、ttl 5m|1h、band on|off、status on|off、seconds on|off、lang en|zh-TW',
+    commandDescription: 'Prompt 快取計時器：開啟面板，或 auto off|50k|100k|200k|500k、ttl 5m|1h、band on|off、status off|time|bar、seconds on|off、lang en|zh-TW',
     paneTitle: 'Prompt 快取',
     on: '開',
     off: '關',
@@ -216,6 +222,7 @@ export const STRINGS = {
     warnToast: (c: string) => `快取剩 ${c}，這時回來繼續最省`,
     paneOpened: '已開啟快取面板。',
     autoReply: (onOff: string) => `到期前自動壓縮：${onOff}`,
+    autoFrom: (min: string) => `${min} tokens 起`,
     ttlReply: (ttl: string) => `快取 TTL 設為 ${ttl}`,
     bandReply: (shown: string) => `提示框上方進度條：${shown}`,
     statusReply: (mode: string) => `狀態列：${mode}`,
@@ -223,7 +230,7 @@ export const STRINGS = {
     langReply: '介面語言已設為繁體中文',
     compactFailed: (why: string) => `壓縮失敗：${why}`,
     alreadyCompacting: '正在壓縮對話',
-    usage: '用法：/cache [auto on|off] [ttl 5m|1h] [band on|off] [status off|time|bar] [seconds on|off] [lang en|zh-TW]',
+    usage: '用法：/cache [auto off|50k|100k|200k|500k] [ttl 5m|1h] [band on|off] [status off|time|bar] [seconds on|off] [lang en|zh-TW]',
     autoLabel: (onOff: string) => `自動壓縮 ${onOff}`,
     compactNow: '立即壓縮',
     pane: '面板',
@@ -256,6 +263,9 @@ export const STRINGS = {
 } as const
 
 type Strings = (typeof STRINGS)[CacheLang]
+
+/** Auto-compact as words: off, or the context size it starts from. */
+const autoState = (L: Strings, s: CacheSettings) => (s.isAutoCompact ? L.autoFrom(tokens(s.compactMinTokens)) : L.off)
 
 /**
  * Time left as shown in the status line, band and pane: whole minutes, rounded
@@ -342,7 +352,7 @@ async function summary($: EngineInterface) {
 
   return [
     L.summaryHead(head, s.ttl, L.source[s.ttlSource]),
-    L.summaryAuto(s.isAutoCompact ? L.on : L.off, Math.round(leadMs(s) / 1000)),
+    L.summaryAuto(autoState(L, s), Math.round(leadMs(s) / 1000)),
   ].join('\n')
 }
 
@@ -374,6 +384,8 @@ async function saveSettings($: EngineInterface, fn: (s: CacheSettings) => CacheS
   const after = await read($, settings)
   await $.store.set(STORE_KEY, after)
   if (after.lang !== before) await retitlePane($)
+
+  return after
 }
 
 /** Re-opening an open pane's id only retitles it; a closed pane stays closed. */
@@ -595,7 +607,7 @@ async function tick($: EngineInterface) {
     return
   }
 
-  const isWorthCompacting = contextOf(hit) >= MIN_COMPACT_TOKENS
+  const isWorthCompacting = contextOf(hit) >= s.compactMinTokens
   if (s.isAutoCompact && isWorthCompacting && remaining <= leadMs(s) && compactTriedFor !== hit.at) {
     compactTriedFor = hit.at
     // Busy or failed stays quiet: a running turn keeps the cache warm itself.
@@ -720,7 +732,7 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: 'cache',
       description: (await strings($)).commandDescription,
-      argumentHint: '[auto on|off] [ttl 5m|1h] [band on|off] [status off|time|bar] [seconds on|off] [lang en|zh-TW]',
+      argumentHint: '[auto off|50k|100k|200k|500k] [ttl 5m|1h] [band on|off] [status off|time|bar] [seconds on|off] [lang en|zh-TW]',
     })
 
     // A pane can outlive a reload of the module; the engine's list says whether it is up.
@@ -830,10 +842,13 @@ export const register: Register = (on, options) => {
       return { text: (await openPane($, false)) ? L.paneOpened : await summary($) }
     }
 
-    if (verb === 'auto' && (value === 'on' || value === 'off')) {
-      await saveSettings($, s => ({ ...s, isAutoCompact: value === 'on' }))
+    const threshold = compactThresholdOf(value)
+    if (verb === 'auto' && (value === 'on' || value === 'off' || threshold !== undefined)) {
+      const saved = await saveSettings($, s =>
+        value === 'off' ? { ...s, isAutoCompact: false } : { ...s, isAutoCompact: true, compactMinTokens: threshold ?? s.compactMinTokens },
+      )
 
-      return { text: L.autoReply(value === 'on' ? L.on : L.off) }
+      return { text: L.autoReply(autoState(L, saved)) }
     }
 
     if (verb === 'ttl' && (value === '5m' || value === '1h')) {
@@ -965,6 +980,8 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const els = $.ui.resolve(e)
     const { Box, Text, Button } = els
+    // The mobile app draws no Select; it gets a button per value instead.
+    const { Select } = els as { Select?: Elements['terminal']['Select'] }
     const s = await read($, settings)
     const hit = await read($, last)
     const L: Strings = STRINGS[s.lang]
@@ -984,6 +1001,11 @@ export const register: Register = (on, options) => {
       { value: false, label: L.hidden },
     ]
     const statusModes = STATUS_MODES.map(value => ({ value, label: L.statusModes[value] }))
+    // Auto-compact is off, or on from one of the context sizes.
+    const autoOptions = [{ value: 'off', label: L.off }, ...COMPACT_THRESHOLDS.map(n => ({ value: String(n), label: tokens(n) }))]
+    const autoValue = s.isAutoCompact ? String(s.compactMinTokens) : 'off'
+    const pickAuto = (v: string) =>
+      saveSettings($, x => (v === 'off' ? { ...x, isAutoCompact: false } : { ...x, isAutoCompact: true, compactMinTokens: Number(v) }))
 
     const headline =
       hit === null ? (
@@ -1033,16 +1055,25 @@ export const register: Register = (on, options) => {
           {settingRow(els, 'ttl', L.ttlLabel(L.source[s.ttlSource]), [{ value: '5m', label: '5m' }, { value: '1h', label: '1h' }], s.ttl, ttl =>
             saveSettings($, x => ({ ...x, ttl, ttlSource: 'manual' })),
           )}
-          {settingRow(els, 'auto', L.autoCompact, onOff, s.isAutoCompact, v => saveSettings($, x => ({ ...x, isAutoCompact: v })))}
-          {settingRow(
-            els,
-            'lead',
-            L.lead,
-            [60, 120, 300].map(sec => ({ value: sec, label: L.minutes(sec / 60) })),
-            s.leadSeconds,
-            v => saveSettings($, x => ({ ...x, leadSeconds: v })),
+          {Select !== undefined ? (
+            // Our own label, not the Select's: the desktop app dims that one.
+            <Box key="auto-row" flexDirection="row" gap={1}>
+              <Text>{L.autoCompact}</Text>
+              <Select key="auto" options={autoOptions} value={autoValue} onSelect={v => void pickAuto(v)} />
+            </Box>
+          ) : (
+            settingRow(els, 'auto', L.autoCompact, autoOptions, autoValue, pickAuto)
           )}
-          <Text dimColor>{L.leadNote(Math.round(leadMs(s) / 1000), tokens(MIN_COMPACT_TOKENS))}</Text>
+          {s.isAutoCompact &&
+            settingRow(
+              els,
+              'lead',
+              L.lead,
+              [60, 120, 300].map(sec => ({ value: sec, label: L.minutes(sec / 60) })),
+              s.leadSeconds,
+              v => saveSettings($, x => ({ ...x, leadSeconds: v })),
+            )}
+          {s.isAutoCompact && <Text dimColor>{L.leadNote(Math.round(leadMs(s) / 1000), tokens(s.compactMinTokens))}</Text>}
           {settingRow(els, 'band', L.band, shownHidden, s.isBandShown, v => saveSettings($, x => ({ ...x, isBandShown: v })))}
           {settingRow(els, 'status', L.statusLine, statusModes, s.status, v => saveSettings($, x => ({ ...x, status: v })))}
           {settingRow(els, 'seconds', L.seconds, onOff, s.isSecondsShown, v => saveSettings($, x => ({ ...x, isSecondsShown: v })))}

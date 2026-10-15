@@ -30,10 +30,10 @@ Claude Code's prompt cache expires after 5 minutes or 1 hour of inactivity. The 
 Turn on auto-compact and the mod compacts the conversation 1, 2 or 5 minutes before the cache expires, **while it is still warm**. Your next message then re-caches a short summary instead of the full transcript.
 
 ```
-/cache auto on
+/cache auto 100k
 ```
 
-Auto-compact is off by default, because compaction drops detail. It only fires when Claude is idle, at most once per cache window, and only on a context of 20k tokens or more. Prefer to decide yourself? The **Compact** button does the same thing with one click.
+Auto-compact is off by default, because compaction drops detail. It only fires when Claude is idle, at most once per cache window, and only on a context at least as large as the threshold you pick: 50k, 100k, 200k or 500k tokens (`/cache auto on` uses 50k). Prefer to decide yourself? The **Compact** button does the same thing with one click.
 
 ## Install
 
@@ -77,7 +77,7 @@ Every session started after that loads the mod.
 
   <img src="docs/images/pane-desktop.png" alt="The /cache pane: time left, last read and write, and settings" width="400">
 - **Expiry reminders.** A toast 5 minutes before a 1h cache expires (1 minute before a 5m one), and another when it has expired.
-- **Auto-compact.** Off by default. Compacts 1, 2 or 5 minutes before expiry, while the cache is still warm.
+- **Auto-compact.** Off by default. Pick off or a context threshold from a dropdown; compacts 1, 2 or 5 minutes before expiry, while the cache is still warm.
 - **One-click compact.** From the band or the pane. The button reads `Compacting…` until the compaction ends, and the band then says the next message writes a fresh cache.
 - **Automatic TTL detection.** The TTL starts at 1h and corrects itself from what the API reports. A cache read after more than 5 minutes proves 1h. A full re-write after 5 to 55 minutes proves 5m. A model switch also reports the TTL directly.
 - **Survives restarts.** Reopening the app or resuming a session picks the countdown up right away.
@@ -90,7 +90,7 @@ The countdown appears in the status line after your first message. Everything el
 | Command | What it does |
 | --- | --- |
 | `/cache` | Open the pane. Where no pane can be placed, prints the same figures. |
-| `/cache auto on` / `off` | Turn auto-compact on or off |
+| `/cache auto 50k\|100k\|200k\|500k\|off` | Turn auto-compact on from that context size, or off (`on` keeps the current size) |
 | `/cache ttl 5m` / `1h` | Set the TTL by hand |
 | `/cache status bar` / `time` / `off` | Show a bar and the time left in the status line (the default), the time alone, or nothing |
 | `/cache band on` / `off` | Show or hide the band above the prompt (on by default) |
@@ -113,7 +113,7 @@ The latest change wins. A language picked in the pane or with `/cache lang` is s
 
 - **Timing.** Every model request on the main thread reports how many tokens it read from the cache and how many it wrote. A request that read or wrote any restarts the countdown from that moment. Subagent requests use their own caches and are ignored.
 - **After a restart.** The timer is saved as it changes (for the 20 most recent sessions). A session last used before 0.3, or a fork, has nothing saved; its countdown is estimated from when the transcript's last response came in, and the pane shows only its context size.
-- **Auto-compact rules.** Auto-compact only fires when Claude is idle, at most once per cache window, and only when the context is at least 20k tokens. Below that, a summary saves too little to be worth the detail it drops. On a 5m cache the lead time is capped at 1 minute, so a pause shorter than 4 minutes never triggers a compaction.
+- **Auto-compact rules.** Auto-compact only fires when Claude is idle, at most once per cache window, and only when the context reaches the threshold you picked (50k by default). Below it, a summary saves too little to be worth the detail it drops. On a 5m cache the lead time is capped at 1 minute, so a pause shorter than 4 minutes never triggers a compaction.
 - **Compacting in the desktop app.** The desktop app (and any SDK or `-p` session) can't compact from a mod directly, so the Compact buttons run `/compact` there, which shows its own result in the transcript.
 - **Resets.** Any compaction, whether `/compact`, Claude Code's own auto-compact, or this mod's, replaces the cached prefix. The timer then waits for the next message.
 

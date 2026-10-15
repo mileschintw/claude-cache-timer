@@ -10,6 +10,8 @@ export type CacheSettings = {
   isAutoCompact: boolean
   /** Seconds before expiry that auto-compact fires. */
   leadSeconds: number
+  /** Least context, in tokens, that auto-compact acts on. */
+  compactMinTokens: number
   isBandShown: boolean
   /** What the status line shows. */
   status: CacheStatusMode
